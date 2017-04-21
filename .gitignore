@@ -54,3 +54,4 @@ build/target/
 build/cores/
 hal/soft-ap/.idea/
 /binaries
+/user/applications/firmware_wind-machine
