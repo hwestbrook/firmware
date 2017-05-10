@@ -31,6 +31,10 @@ endif
 # the root of the application
 APPROOT := $(SOURCE_PATH)$(USRSRC)
 
+ifeq ($(DEBUG_LOG), y)
+	CFLAGS += -DDEBUG_LOG
+endif
+
 ifneq ($(wildcard $(APPROOT)/project.properties),)
 	ifneq ($(wildcard $(APPROOT)/src),)
 	   APPLAYOUT=extended
