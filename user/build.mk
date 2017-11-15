@@ -35,6 +35,13 @@ ifeq ($(DEBUG_LOG), y)
 	CFLAGS += -DDEBUG_LOG
 endif
 
+ifeq ($(ALTRAC_DEVICE), 340)
+	CFLAGS += -DENDPOINT_340
+endif
+ifeq ($(ALTRAC_DEVICE), 310)
+	CFLAGS += -DENDPOINT_310
+endif
+
 ifneq ($(wildcard $(APPROOT)/project.properties),)
 	ifneq ($(wildcard $(APPROOT)/src),)
 	   APPLAYOUT=extended
