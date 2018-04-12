@@ -71,12 +71,22 @@ sock_result_t socket_close(sock_handle_t sock)
     return 0;
 }
 
+sock_result_t socket_shutdown(sock_handle_t sd, int how)
+{
+    return -1;
+}
+
 sock_handle_t socket_create(uint8_t family, uint8_t type, uint8_t protocol, uint16_t port, network_interface_t nif)
 {
     return 0;
 }
 
 sock_result_t socket_send(sock_handle_t sd, const void* buffer, socklen_t len)
+{
+    return 0;
+}
+
+sock_result_t socket_send_ex(sock_handle_t sd, const void* buffer, socklen_t len, uint32_t flags, system_tick_t timeout, void* reserved)
 {
     return 0;
 }

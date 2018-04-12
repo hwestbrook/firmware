@@ -36,6 +36,9 @@
 #include "timer_hal.h"
 #include "rgbled.h"
 #include "service_debug.h"
+#include "cellular_hal.h"
+#include "system_power.h"
+#include "simple_pool_allocator.h"
 
 #include "spark_wiring_network.h"
 #include "spark_wiring_constants.h"
@@ -46,6 +49,7 @@
 
 using spark::Network;
 using particle::LEDStatus;
+using particle::CloudDiagnostics;
 
 volatile system_tick_t spark_loop_total_millis = 0;
 
@@ -56,6 +60,7 @@ unsigned char wlan_profile_index;
 
 volatile uint8_t Spark_Error_Count;
 volatile uint8_t SYSTEM_POWEROFF;
+uint8_t feature_cloud_udp = 0;
 
 static struct SetThreadCurrentFunctionPointers {
     SetThreadCurrentFunctionPointers() {
@@ -65,7 +70,8 @@ static struct SetThreadCurrentFunctionPointers {
                                              nullptr, nullptr);
     }
 } s_SetThreadCurrentFunctionPointersInitializer;
-ISRTaskQueue SystemISRTaskQueue(4);
+
+ISRTaskQueue SystemISRTaskQueue;
 
 void Network_Setup(bool threaded)
 {
@@ -111,6 +117,11 @@ void manage_network_connection()
             auto was_sleeping = SPARK_WLAN_SLEEP;
             auto was_disconnected = network.manual_disconnect();
             cloud_disconnect();
+            // Note: The cloud connectivity layer may "detect" an unanticipated network disconnection
+            // before the networking layer, and due to current recovery logic, which resets the network,
+            // it's difficult to say whether the network has actually failed or not. In this case we
+            // disconnect from the network with the RESET reason code
+            network.disconnect(SPARK_WLAN_RESET ? NETWORK_DISCONNECT_REASON_RESET : NETWORK_DISCONNECT_REASON_NONE);
             network.off();
             CLR_WLAN_WD();
             SPARK_WLAN_RESET = 0;
@@ -123,7 +134,7 @@ void manage_network_connection()
     {
         if (!SPARK_WLAN_STARTED || (spark_cloud_flag_auto_connect() && !network.ready()))
         {
-            INFO("Network Connect: %s", (!SPARK_WLAN_STARTED) ? "!SPARK_WLAN_STARTED" : "SPARK_CLOUD_CONNECT && !network.ready()");
+            // INFO("Network Connect: %s", (!SPARK_WLAN_STARTED) ? "!SPARK_WLAN_STARTED" : "SPARK_CLOUD_CONNECT && !network.ready()");
             network.connect();
         }
     }
@@ -285,8 +296,16 @@ void establish_cloud_connection()
             return;
         }
 
+#if PLATFORM_ID==PLATFORM_ELECTRON_PRODUCTION
+        const CellularNetProvData provider_data = cellular_network_provider_data_get(NULL);
+        CLOUD_FN(spark_set_connection_property(particle::protocol::Connection::PING, (provider_data.keepalive * 1000), nullptr, nullptr), (void)0);
+        spark_cloud_udp_port_set(provider_data.port);
+#endif
         INFO("Cloud: connecting");
+        const auto diag = CloudDiagnostics::instance();
+        diag->status(CloudDiagnostics::CONNECTING);
         system_notify_event(cloud_status, cloud_status_connecting);
+        diag->connectionAttempt();
         int connect_result = spark_cloud_socket_connect();
         if (connect_result >= 0)
         {
@@ -297,9 +316,13 @@ void establish_cloud_connection()
         }
         else
         {
+            // TODO: Update the last error diagnostic via CloudDiagnostics::lastError(). Currently,
+            // the last error diagnostic is used only for communication errors since we cannot mix
+            // HAL and communication error codes without specifying the category of an error
             WARN("Cloud socket connection failed: %d", connect_result);
             SPARK_CLOUD_SOCKETED = 0;
 
+            diag->status(CloudDiagnostics::DISCONNECTED);
             // "Connecting" event should be followed by either "connected" or "disconnected" event
             system_notify_event(cloud_status, cloud_status_disconnected);
 
@@ -326,6 +349,7 @@ void establish_cloud_connection()
 int cloud_handshake()
 {
 	bool udp = HAL_Feature_Get(FEATURE_CLOUD_UDP);
+    feature_cloud_udp = (uint8_t)udp;
 	bool presence_announce = !udp;
 	int err = Spark_Handshake(presence_announce);
 	return err;
@@ -363,6 +387,8 @@ void handle_cloud_connection(bool force_events)
                     // allow time for the LED to be flashed
                     while ((HAL_Timer_Get_Milli_Seconds()-start)<250);
                 }
+                const auto diag = CloudDiagnostics::instance();
+                diag->lastError(err);
                 cloud_disconnect();
             }
             else
@@ -370,6 +396,7 @@ void handle_cloud_connection(bool force_events)
                 INFO("Cloud connected");
                 SPARK_CLOUD_CONNECTED = 1;
                 cloud_failed_connection_attempts = 0;
+                CloudDiagnostics::instance()->status(CloudDiagnostics::CONNECTED);
                 system_notify_event(cloud_status, cloud_status_connected);
                 if (system_mode() == SAFE_MODE) {
                     LED_SIGNAL_START(SAFE_MODE, BACKGROUND); // Connected to the cloud while in safe mode
@@ -391,7 +418,7 @@ void manage_cloud_connection(bool force_events)
 {
     if (spark_cloud_flag_auto_connect() == 0)
     {
-        cloud_disconnect();
+        cloud_disconnect_graceful(true, CLOUD_DISCONNECT_REASON_USER);
     }
     else // cloud connection is wanted
     {
@@ -408,7 +435,7 @@ static void process_isr_task_queue()
 }
 
 #if Wiring_SetupButtonUX
-extern void system_handle_button_click();
+extern void system_handle_button_clicks(bool isIsr);
 #endif
 
 void Spark_Idle_Events(bool force_events/*=false*/)
@@ -423,7 +450,7 @@ void Spark_Idle_Events(bool force_events/*=false*/)
     if (!SYSTEM_POWEROFF) {
 
 #if Wiring_SetupButtonUX
-        system_handle_button_click();
+        system_handle_button_clicks(false /* isIsr */);
 #endif
         manage_serial_flasher();
 
@@ -520,22 +547,35 @@ void system_delay_ms(unsigned long ms, bool force_no_background_loop=false)
     }
 }
 
+void cloud_disconnect_graceful(bool closeSocket, cloud_disconnect_reason reason)
+{
+    cloud_disconnect(closeSocket, true, reason);
+}
 
-void cloud_disconnect(bool closeSocket)
+void cloud_disconnect(bool closeSocket, bool graceful, cloud_disconnect_reason reason)
 {
 #ifndef SPARK_NO_CLOUD
 
     if (SPARK_CLOUD_SOCKETED || SPARK_CLOUD_CONNECTED)
     {
         INFO("Cloud: disconnecting");
+        const auto diag = CloudDiagnostics::instance();
         if (SPARK_CLOUD_CONNECTED)
         {
+            diag->resetConnectionAttempts();
+            if (reason != CLOUD_DISCONNECT_REASON_NONE) {
+                diag->disconnectionReason(reason);
+                if (reason == CLOUD_DISCONNECT_REASON_ERROR) {
+                    diag->disconnectedUnexpectedly();
+                }
+            }
+            diag->status(CloudDiagnostics::DISCONNECTING);
             // "Disconnecting" event is generated only for a successfully established connection (including handshake)
             system_notify_event(cloud_status, cloud_status_disconnecting);
         }
 
         if (closeSocket)
-            spark_cloud_socket_disconnect();
+            spark_cloud_socket_disconnect(graceful);
 
         SPARK_FLASH_UPDATE = 0;
         SPARK_CLOUD_CONNECTED = 0;
@@ -546,6 +586,7 @@ void cloud_disconnect(bool closeSocket)
         LED_SIGNAL_STOP(CLOUD_CONNECTING);
 
         INFO("Cloud: disconnected");
+        diag->status(CloudDiagnostics::DISCONNECTED);
         system_notify_event(cloud_status, cloud_status_disconnected);
     }
     Spark_Error_Count = 0;  // this is also used for CFOD/WiFi reset, and blocks the LED when set.
@@ -580,4 +621,33 @@ uint8_t application_thread_invoke(void (*callback)(void* data), void* data, void
     APPLICATION_THREAD_CONTEXT_ASYNC_RESULT(application_thread_invoke(callback, data, reserved), 0);
     callback(data);
     return 0;
+}
+
+void cancel_connection()
+{
+    // Cancel current network connection attempt
+    network.connect_cancel(true);
+    // Abort cloud connection
+    Spark_Abort();
+}
+
+namespace {
+
+// Memory pool for small and short-lived allocations
+SimpleAllocedPool g_memPool(512);
+
+} // namespace
+
+void* system_pool_alloc(size_t size, void* reserved) {
+    void *ptr = nullptr;
+    ATOMIC_BLOCK() {
+        ptr = g_memPool.allocate(size);
+    }
+    return ptr;
+}
+
+void system_pool_free(void* ptr, void* reserved) {
+    ATOMIC_BLOCK() {
+        g_memPool.deallocate(ptr);
+    }
 }

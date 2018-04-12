@@ -24,6 +24,7 @@
  */
 
 #include <stdint.h>
+#include <stdlib.h>
 #include "core_hal.h"
 #include "watchdog_hal.h"
 #include "gpio_hal.h"
@@ -52,11 +53,16 @@
 #include "usart_hal.h"
 #include "deviceid_hal.h"
 #include "pinmap_impl.h"
+#include "ota_module.h"
+#include "hal_event.h"
+#include "system_error.h"
 
 #if PLATFORM_ID==PLATFORM_P1
 #include "wwd_management.h"
 #include "wlan_hal.h"
 #endif
+
+extern char link_heap_location, link_heap_location_end;
 
 #define STOP_MODE_EXIT_CONDITION_PIN 0x01
 #define STOP_MODE_EXIT_CONDITION_RTC 0x02
@@ -262,35 +268,49 @@ static void Init_Last_Reset_Info()
 
 static int Write_Feature_Flag(uint32_t flag, bool value, bool *prev_value)
 {
-    uint32_t flags = *(uint32_t*)dct_read_app_data(DCT_FEATURE_FLAGS_OFFSET);
+    if (HAL_IsISR()) {
+        return -1; // DCT cannot be accessed from an ISR
+    }
+    uint32_t flags = 0;
+    int result = dct_read_app_data_copy(DCT_FEATURE_FLAGS_OFFSET, &flags, sizeof(flags));
+    if (result != 0) {
+        return result;
+    }
     const bool cur_value = flags & flag;
-    if (prev_value)
-    {
+    if (prev_value) {
         *prev_value = cur_value;
     }
-    if (cur_value != value)
-    {
-        if (value)
-        {
+    if (cur_value != value) {
+        if (value) {
             flags |= flag;
-        }
-        else
-        {
+        } else {
             flags &= ~flag;
         }
-        return dct_write_app_data(&flags, DCT_FEATURE_FLAGS_OFFSET, 4);
+        result = dct_write_app_data(&flags, DCT_FEATURE_FLAGS_OFFSET, 4);
+        if (result != 0) {
+            return result;
+        }
     }
     return 0;
 }
 
-static bool Read_Feature_Flag(uint32_t flag)
+static int Read_Feature_Flag(uint32_t flag, bool* value)
 {
-    const uint32_t flags = *(uint32_t*)dct_read_app_data(DCT_FEATURE_FLAGS_OFFSET);
-    return flags & flag;
+    if (HAL_IsISR()) {
+        return -1; // DCT cannot be accessed from an ISR
+    }
+    uint32_t flags = 0;
+    const int result = dct_read_app_data_copy(DCT_FEATURE_FLAGS_OFFSET, &flags, sizeof(flags));
+    if (result != 0) {
+        return result;
+    }
+    *value = flags & flag;
+    return 0;
 }
 
 /* Extern variables ----------------------------------------------------------*/
 
+volatile uint8_t rtos_started = 0;
 
 /*******************************************************************************
  * Function Name  : HAL_Core_Config.
@@ -313,6 +333,8 @@ void HAL_Core_Config(void)
 
     RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_BKPSRAM, ENABLE);
 
+    /* Disable WKP pin */
+    PWR_WakeUpPinCmd(DISABLE);
 
     //Wiring pins default to inputs
 #if !defined(USE_SWD_JTAG) && !defined(USE_SWD)
@@ -337,6 +359,10 @@ void HAL_Core_Config(void)
 
     HAL_RNG_Configuration();
 
+    // Initialize system-part2 stdlib PRNG with a seed from hardware PRNG
+    // in case some system code happens to use rand()
+    srand(HAL_RNG_GetRandomNumber());
+
 #ifdef DFU_BUILD_ENABLE
     Load_SystemFlags();
 #endif
@@ -350,10 +376,10 @@ void HAL_Core_Config(void)
     // fully intialize the RTOS.
     HAL_Core_Setup_override_interrupts();
 
-#if MODULAR_FIRMWARE
+#if defined(MODULAR_FIRMWARE) && MODULAR_FIRMWARE
     // write protect system module parts if not already protected
     FLASH_WriteProtectMemory(FLASH_INTERNAL, CORE_FW_ADDRESS, USER_FIRMWARE_IMAGE_LOCATION - CORE_FW_ADDRESS, true);
-#endif
+#endif /* defined(MODULAR_FIRMWARE) && MODULAR_FIRMWARE */
 
 #ifdef HAS_SERIAL_FLASH
     //Initialize Serial Flash
@@ -365,7 +391,7 @@ void HAL_Core_Config(void)
 #endif
 }
 
-#if !MODULAR_FIRMWARE
+#if !defined(MODULAR_FIRMWARE) || !MODULAR_FIRMWARE
 __attribute__((externally_visible, section(".early_startup.HAL_Core_Config"))) uint32_t startup = (uint32_t)&HAL_Core_Config;
 #endif
 
@@ -376,12 +402,14 @@ void HAL_Core_Setup(void) {
 
     HAL_Core_Setup_finalize();
 
-    bootloader_update_if_needed();
+    if (bootloader_update_if_needed()) {
+        HAL_Core_System_Reset();
+    }
     HAL_Bootloader_Lock(true);
 
     HAL_save_device_id(DCT_DEVICE_ID_OFFSET);
 
-#if !defined(MODULAR_FIRMWARE)
+#if !defined(MODULAR_FIRMWARE) || !MODULAR_FIRMWARE
     module_user_init_hook();
 #endif
 }
@@ -397,13 +425,15 @@ void HAL_Core_Init(void) {
     HAL_Core_Init_finalize();
 }
 
-#if MODULAR_FIRMWARE
+#if defined(MODULAR_FIRMWARE) && MODULAR_FIRMWARE
 
 bool HAL_Core_Validate_User_Module(void)
 {
     bool valid = false;
+    Load_SystemFlags();
 
-    if (!(SYSTEM_FLAG(StartupMode_SysFlag) & 1)) // Safe mode flag
+    const uint8_t flags = SYSTEM_FLAG(StartupMode_SysFlag);
+    if (flags == 0xff /* Old bootloader */ || !(flags & 1)) // Safe mode flag
     {
         //CRC verification Enabled by default
         if (FLASH_isUserModuleInfoValid(FLASH_INTERNAL, USER_FIRMWARE_IMAGE_LOCATION, USER_FIRMWARE_IMAGE_LOCATION))
@@ -423,6 +453,43 @@ bool HAL_Core_Validate_User_Module(void)
             while(1);//Device should reset before reaching this line
         }
     }
+    return valid;
+}
+
+bool HAL_Core_Validate_Modules(uint32_t flags, void* reserved)
+{
+    const module_bounds_t* bounds = NULL;
+    hal_module_t mod;
+    bool module_fetched = false;
+    bool valid = false;
+
+    // First verify bootloader module
+    bounds = find_module_bounds(MODULE_FUNCTION_BOOTLOADER, 0);
+    module_fetched = fetch_module(&mod, bounds, false, MODULE_VALIDATION_INTEGRITY);
+
+    valid = module_fetched && (mod.validity_checked == mod.validity_result);
+
+    if (!valid) {
+        return valid;
+    }
+
+    // Now check system-parts
+    int i = 0;
+    if (flags & 1) {
+        // Validate only that system-part that depends on bootloader passes dependency check
+        i = 2;
+    }
+    do {
+        bounds = find_module_bounds(MODULE_FUNCTION_SYSTEM_PART, i++);
+        if (bounds) {
+            module_fetched = fetch_module(&mod, bounds, false, MODULE_VALIDATION_INTEGRITY);
+            valid = module_fetched && (mod.validity_checked == mod.validity_result);
+        }
+        if (flags & 1) {
+            bounds = NULL;
+        }
+    } while(bounds != NULL && valid);
+
     return valid;
 }
 #endif
@@ -535,10 +602,34 @@ void HAL_Core_Enter_Safe_Mode(void* reserved)
     HAL_Core_System_Reset_Ex(RESET_REASON_SAFE_MODE, 0, NULL);
 }
 
-void HAL_Core_Enter_Stop_Mode(uint16_t wakeUpPin, uint16_t edgeTriggerMode, long seconds)
+int32_t HAL_Core_Enter_Stop_Mode_Ext(const uint16_t* pins, size_t pins_count, const InterruptMode* mode, size_t mode_count, long seconds, void* reserved)
 {
-    if (!((wakeUpPin < TOTAL_PINS) && (wakeUpPin >= 0) && (edgeTriggerMode <= FALLING)) && seconds <= 0)
-        return;
+    // Initial sanity check
+    if ((pins_count == 0 || mode_count == 0 || pins == NULL || mode == NULL) && seconds <= 0) {
+        return SYSTEM_ERROR_NOT_ALLOWED;
+    }
+
+    // Validate pins and modes
+    if ((pins_count > 0 && pins == NULL) || (pins_count > 0 && mode_count == 0) || (mode_count > 0 && mode == NULL)) {
+        return SYSTEM_ERROR_NOT_ALLOWED;
+    }
+
+    for (unsigned i = 0; i < pins_count; i++) {
+        if (pins[i] >= TOTAL_PINS) {
+            return SYSTEM_ERROR_NOT_ALLOWED;
+        }
+    }
+
+    for (unsigned i = 0; i < mode_count; i++) {
+        switch(mode[i]) {
+            case RISING:
+            case FALLING:
+            case CHANGE:
+                break;
+            default:
+                return SYSTEM_ERROR_NOT_ALLOWED;
+        }
+    }
 
     SysTick->CTRL &= ~SysTick_CTRL_ENABLE_Msk;
 
@@ -561,9 +652,10 @@ void HAL_Core_Enter_Stop_Mode(uint16_t wakeUpPin, uint16_t edgeTriggerMode, long
     // Suspend all EXTI interrupts
     HAL_Interrupts_Suspend();
 
-    /* Configure EXTI Interrupt : wake-up from stop mode using pin interrupt */
-    if ((wakeUpPin < TOTAL_PINS) && (edgeTriggerMode <= FALLING))
-    {
+    for (unsigned i = 0; i < pins_count; i++) {
+        pin_t wakeUpPin = pins[i];
+        InterruptMode edgeTriggerMode = (i < mode_count) ? mode[i] : mode[mode_count - 1];
+
         PinMode wakeUpPinMode = INPUT;
         /* Set required pinMode based on edgeTriggerMode */
         switch(edgeTriggerMode)
@@ -616,12 +708,24 @@ void HAL_Core_Enter_Stop_Mode(uint16_t wakeUpPin, uint16_t edgeTriggerMode, long
 
     HAL_Core_Execute_Stop_Mode();
 
+    int32_t reason = SYSTEM_ERROR_UNKNOWN;
+
     if (exit_conditions & STOP_MODE_EXIT_CONDITION_PIN) {
-        /* Detach the Interrupt pin */
-        HAL_Interrupts_Detach_Ext(wakeUpPin, 1, NULL);
+        STM32_Pin_Info* PIN_MAP = HAL_Pin_Map();
+        for (unsigned i = 0; i < pins_count; i++) {
+            pin_t wakeUpPin = pins[i];
+            if (EXTI_GetITStatus(PIN_MAP[wakeUpPin].gpio_pin) != RESET) {
+                reason = i + 1;
+            }
+            /* Detach the Interrupt pin */
+            HAL_Interrupts_Detach_Ext(wakeUpPin, 1, NULL);
+        }
     }
 
     if (exit_conditions & STOP_MODE_EXIT_CONDITION_RTC) {
+        if (NVIC_GetPendingIRQ(RTC_Alarm_IRQn)) {
+            reason = 0;
+        }
         // No need to detach RTC Alarm from EXTI, since it will be detached in HAL_Interrupts_Restore()
 
         // RTC Alarm should be canceled to avoid entering HAL_RTCAlarm_Handler or if we were woken up by pin
@@ -637,6 +741,14 @@ void HAL_Core_Enter_Stop_Mode(uint16_t wakeUpPin, uint16_t edgeTriggerMode, long
     SysTick->CTRL |= SysTick_CTRL_ENABLE_Msk;
 
     HAL_USB_Attach();
+
+    return reason;
+}
+
+void HAL_Core_Enter_Stop_Mode(uint16_t wakeUpPin, uint16_t edgeTriggerMode, long seconds)
+{
+    InterruptMode m = (InterruptMode)edgeTriggerMode;
+    HAL_Core_Enter_Stop_Mode_Ext(&wakeUpPin, 1, &m, 1, seconds, NULL);
 }
 
 void HAL_Core_Execute_Stop_Mode(void)
@@ -670,7 +782,7 @@ void HAL_Core_Execute_Stop_Mode(void)
     while(RCC_GetSYSCLKSource() != 0x08);
 }
 
-void HAL_Core_Enter_Standby_Mode(uint32_t seconds, void* reserved)
+void HAL_Core_Enter_Standby_Mode(uint32_t seconds, uint32_t flags)
 {
     // Configure RTC wake-up
     if (seconds > 0) {
@@ -678,19 +790,29 @@ void HAL_Core_Enter_Standby_Mode(uint32_t seconds, void* reserved)
         HAL_RTC_Set_UnixAlarm((time_t) seconds);
     }
 
-    HAL_Core_Execute_Standby_Mode();
+    HAL_Core_Execute_Standby_Mode_Ext(flags, NULL);
 }
 
-void HAL_Core_Execute_Standby_Mode(void)
+void HAL_Core_Execute_Standby_Mode_Ext(uint32_t flags, void* reserved)
 {
+    if ((flags & HAL_STANDBY_MODE_FLAG_DISABLE_WKP_PIN) == 0) {
     /* Enable WKUP pin */
     PWR_WakeUpPinCmd(ENABLE);
+    } else {
+        /* Disable WKUP pin */
+        PWR_WakeUpPinCmd(DISABLE);
+    }
 
     /* Request to enter STANDBY mode */
     PWR_EnterSTANDBYMode();
 
     /* Following code will not be reached */
     while(1);
+}
+
+void HAL_Core_Execute_Standby_Mode(void)
+{
+    HAL_Core_Execute_Standby_Mode_Ext(0, NULL);
 }
 
 /**
@@ -738,6 +860,8 @@ void generate_key()
  */
 void application_start()
 {
+    rtos_started = 1;
+
     // one the key is sent to the cloud, this can be removed, since the key is fetched in
     // Spark_Protocol_init(). This is just a temporary measure while the key still needs
     // to be fetched via DFU.
@@ -1178,15 +1302,39 @@ unsigned HAL_Core_System_Clock(HAL_SystemClock clock, void* reserved)
     return SystemCoreClock;
 }
 
+extern size_t pvPortLargestFreeBlock();
+
 uint32_t HAL_Core_Runtime_Info(runtime_info_t* info, void* reserved)
 {
-    extern unsigned char _eheap[];
-    extern unsigned char *sbrk_heap_top;
-
     struct mallinfo heapinfo = mallinfo();
-    info->freeheap = _eheap-sbrk_heap_top + heapinfo.fordblks;
+    // fordblks  The total number of bytes in free blocks.
+    info->freeheap = heapinfo.fordblks;
+    if (offsetof(runtime_info_t, total_init_heap) + sizeof(info->total_init_heap) <= info->size) {
+        info->total_init_heap = (uint32_t)(&link_heap_location_end - &link_heap_location);
+    }
+
+    if (offsetof(runtime_info_t, total_heap) + sizeof(info->total_heap) <= info->size) {
+        info->total_heap = heapinfo.arena;
+    }
+
+    if (offsetof(runtime_info_t, max_used_heap) + sizeof(info->max_used_heap) <= info->size) {
+        info->max_used_heap = heapinfo.usmblks;
+    }
+
+    if (offsetof(runtime_info_t, user_static_ram) + sizeof(info->user_static_ram) <= info->size) {
+        info->user_static_ram = info->total_init_heap - info->total_heap;
+    }
+
+    if (offsetof(runtime_info_t, largest_free_block_heap) + sizeof(info->largest_free_block_heap) <= info->size) {
+    		info->largest_free_block_heap = pvPortLargestFreeBlock();
+    }
 
     return 0;
+}
+
+void vApplicationMallocFailedHook(size_t xWantedSize)
+{
+	hal_notify_event(HAL_EVENT_OUT_OF_MEMORY, xWantedSize, 0);
 }
 
 int HAL_Feature_Set(HAL_Feature feature, bool enabled)
@@ -1213,25 +1361,29 @@ int HAL_Feature_Set(HAL_Feature feature, bool enabled)
         }
         case FEATURE_RESET_INFO:
         {
-            Write_Feature_Flag(FEATURE_FLAG_RESET_INFO, enabled, NULL);
-            return 0;
+            return Write_Feature_Flag(FEATURE_FLAG_RESET_INFO, enabled, NULL);
         }
 
 #if PLATFORM_ID==PLATFORM_P1
         case FEATURE_WIFI_POWERSAVE_CLOCK:
         {
             wwd_set_wlan_sleep_clock_enabled(enabled);
-            const uint8_t* data = (const uint8_t*)dct_read_app_data(DCT_RADIO_FLAGS_OFFSET);
-            uint8_t current = (*data);
+            uint8_t current = 0;
+            dct_read_app_data_copy(DCT_RADIO_FLAGS_OFFSET, &current, sizeof(current));
             current &= 0xFC;
             if (!enabled) {
                 current |= 2;   // 0bxxxxxx10 to disable the clock, any other value to enable it.
             }
             dct_write_app_data(&current, DCT_RADIO_FLAGS_OFFSET, 1);
+            return 0;
         }
 #endif
-
-
+#if HAL_PLATFORM_CLOUD_UDP
+        case FEATURE_CLOUD_UDP: {
+            const uint8_t data = (enabled ? 0xff : 0x00);
+            return dct_write_app_data(&data, DCT_CLOUD_TRANSPORT_OFFSET, sizeof(data));
+        }
+#endif // HAL_PLATFORM_CLOUD_UDP
     }
     return -1;
 }
@@ -1255,14 +1407,15 @@ bool HAL_Feature_Get(HAL_Feature feature)
         {
         		uint8_t value = false;
 #if HAL_PLATFORM_CLOUD_UDP
-        		const uint8_t* data = dct_read_app_data(DCT_CLOUD_TRANSPORT_OFFSET);
-        		value = *data==0xFF;		// default is to use UDP
+        		dct_read_app_data_copy(DCT_CLOUD_TRANSPORT_OFFSET, &value, sizeof(value));
+        		value = value==0xFF;		// default is to use UDP
 #endif
         		return value;
         }
         case FEATURE_RESET_INFO:
         {
-            return Read_Feature_Flag(FEATURE_FLAG_RESET_INFO);
+            bool value = false;
+            return (Read_Feature_Flag(FEATURE_FLAG_RESET_INFO, &value) == 0) ? value : false;
         }
     }
     return false;
@@ -1298,18 +1451,18 @@ static void BUTTON_Mirror_Init() {
 }
 
 static void BUTTON_Mirror_Persist(button_config_t* conf) {
-    const button_config_t* saved_config = (const button_config_t*)dct_read_app_data(DCT_MODE_BUTTON_MIRROR_OFFSET);
+    button_config_t saved_config;
+    dct_read_app_data_copy(DCT_MODE_BUTTON_MIRROR_OFFSET, &saved_config, sizeof(saved_config));
 
     if (conf) {
-        if (saved_config->active == 0xFF || memcmp((void*)conf, (void*)saved_config, sizeof(button_config_t)))
+        if (saved_config.active == 0xFF || memcmp((void*)conf, (void*)&saved_config, sizeof(button_config_t)))
         {
             dct_write_app_data((void*)conf, DCT_MODE_BUTTON_MIRROR_OFFSET, sizeof(button_config_t));
         }
     } else {
-        if (saved_config->active != 0xFF) {
-            button_config_t tmp;
-            memset((void*)&tmp, 0xff, sizeof(button_config_t));
-            dct_write_app_data((void*)&tmp, DCT_MODE_BUTTON_MIRROR_OFFSET, sizeof(button_config_t));
+        if (saved_config.active != 0xFF) {
+            memset((void*)&saved_config, 0xff, sizeof(button_config_t));
+            dct_write_app_data((void*)&saved_config, DCT_MODE_BUTTON_MIRROR_OFFSET, sizeof(button_config_t));
         }
     }
 }
@@ -1444,18 +1597,18 @@ void HAL_Core_Button_Mirror_Pin(uint16_t pin, InterruptMode mode, uint8_t bootlo
 
 static void LED_Mirror_Persist(uint8_t led, led_config_t* conf) {
     const size_t offset = DCT_LED_MIRROR_OFFSET + ((led - LED_MIRROR_OFFSET) * sizeof(led_config_t));
-    const led_config_t* saved_config = (const led_config_t*)dct_read_app_data(offset);
+    led_config_t saved_config;
+    dct_read_app_data_copy(offset, &saved_config, sizeof(saved_config));
 
     if (conf) {
-        if (saved_config->version == 0xFF || memcmp((void*)conf, (void*)saved_config, sizeof(led_config_t)))
+        if (saved_config.version == 0xFF || memcmp((void*)conf, (void*)&saved_config, sizeof(led_config_t)))
         {
             dct_write_app_data((void*)conf, offset, sizeof(led_config_t));
         }
     } else {
-        if (saved_config->version != 0xFF) {
-            led_config_t tmp;
-            memset((void*)&tmp, 0xff, sizeof(led_config_t));
-            dct_write_app_data((void*)&tmp, offset, sizeof(led_config_t));
+        if (saved_config.version != 0xFF) {
+            memset((void*)&saved_config, 0xff, sizeof(led_config_t));
+            dct_write_app_data((void*)&saved_config, offset, sizeof(led_config_t));
         }
     }
 }

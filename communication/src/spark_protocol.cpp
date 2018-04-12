@@ -27,6 +27,10 @@
 LOG_SOURCE_CATEGORY("comm.sparkprotocol")
 
 #include "spark_protocol.h"
+#include "protocol_selector.h"
+
+#if !PARTICLE_PROTOCOL
+
 #include "protocol_defs.h"
 #include "handshake.h"
 #include <string.h>
@@ -36,6 +40,13 @@ LOG_SOURCE_CATEGORY("comm.sparkprotocol")
 #include "service_debug.h"
 #include "messages.h"
 
+#ifdef USE_MBEDTLS
+#include "mbedtls_compat.h"
+#include "mbedtls_util.h"
+#endif
+
+#include "communication_diagnostic.h"
+
 using namespace particle::protocol;
 
 #if 0
@@ -43,6 +54,29 @@ extern void serial_dump(const char* msg, ...);
 #else
 #define serial_dump(x, ...)
 #endif
+
+static inline size_t round_to_16(size_t len)
+{
+  if (len == 0)
+    return len;
+  size_t rem = len % 16;
+  if (rem != 0) {
+    len += 16 - rem;
+  }
+  return len;
+}
+
+static inline int message_padding_strip(uint8_t* buf, int len)
+{
+  if (len > 0) {
+    int nopadlen = len - (int)buf[len - 1];
+    if (nopadlen < 0)
+      nopadlen = 0;
+    return nopadlen;
+  }
+
+  return 0;
+}
 
 /**
  * Handle the cryptographically secure random seed from the cloud by using
@@ -118,7 +152,11 @@ int SparkProtocol::handshake(void)
   rsa_context rsa;
   init_rsa_context_with_public_key(&rsa, server_public_key);
   const int len = 52+MAX_DEVICE_PUBLIC_KEY_LENGTH;
+#ifdef USE_MBEDTLS
+  err = mbedtls_rsa_pkcs1_encrypt(&rsa, mbedtls_default_rng, nullptr, MBEDTLS_RSA_PUBLIC, len, queue, queue + len);
+#else
   err = rsa_pkcs1_encrypt(&rsa, RSA_PUBLIC, len, queue, queue + len);
+#endif
   rsa_free(&rsa);
 
   if (err) { LOG(ERROR,"RSA encrypt error %d", err); return err; }
@@ -184,7 +222,7 @@ bool SparkProtocol::event_loop(CoAPMessageType::Enum& message_type)
       LOG(WARN,"received ERROR CoAPMessage");
       if (updating) {      // was updating but had an error, inform the client
         serial_dump("handle received message failed - aborting transfer");
-        callbacks.finish_firmware_update(file, 0, NULL);
+        callbacks.finish_firmware_update(file, UpdateFlag::ERROR, NULL);
         updating = false;
       }
 
@@ -335,8 +373,13 @@ CoAPMessageType::Enum
   unsigned char next_iv[16];
   memcpy(next_iv, buf, 16);
 
+#ifdef USE_MBEDTLS
+  mbedtls_aes_setkey_dec(&aes, key, 128);
+  mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_DECRYPT, round_to_16(length), iv_receive, buf, buf);
+#else
   aes_setkey_dec(&aes, key, 128);
   aes_crypt_cbc(&aes, AES_DECRYPT, length, iv_receive, buf, buf);
+#endif
 
   memcpy(iv_receive, next_iv, 16);
 
@@ -346,16 +389,10 @@ CoAPMessageType::Enum
 void SparkProtocol::hello(unsigned char *buf, bool newly_upgraded)
 {
   unsigned short message_id = next_message_id();
-  size_t len = Messages::hello(buf+2, message_id, newly_upgraded, PLATFORM_ID, product_id, product_firmware_version, false, nullptr, 0);
+  uint8_t flags = newly_upgraded ? 1 : 0;
+  // diagnostics are not supported in this protocol implementation.
+  size_t len = Messages::hello(buf+2, message_id, flags, PLATFORM_ID, product_id, product_firmware_version, false, nullptr, 0);
   wrap(buf, len);
-}
-
-void SparkProtocol::notify_update_done(uint8_t* buf)
-{
-    DEBUG("Sending UpdateDone");
-    unsigned short message_id = next_message_id();
-    size_t size = Messages::update_done(buf+2, message_id, false);
-    wrap(buf, size);
 }
 
 void SparkProtocol::key_changed(unsigned char *buf, unsigned char token)
@@ -474,13 +511,7 @@ int SparkProtocol::variable_value(unsigned char *buf,
 }
 
 inline bool is_system(const char* event_name) {
-    // if there were a strncmpi this would be easier!
-    char prefix[6];
-    if (!*event_name || strlen(event_name)<5)
-        return false;
-    memcpy(prefix, event_name, 5);
-    prefix[5] = '\0';
-    return !strcasecmp(prefix, "spark");
+    return !strncmp(event_name, "spark/", 6);
 }
 
 // Returns true on success, false on sending timeout or rate-limiting failure
@@ -502,6 +533,7 @@ bool SparkProtocol::send_event(const char *event_name, const char *data, int ttl
       uint16_t currentMinute = uint16_t(callbacks.millis()>>16);
       if (currentMinute==lastMinute) {      // == handles millis() overflow
           if (eventsThisMinute==255) {
+              g_rateLimitedEventsCounter++;
               handler.setError(SYSTEM_ERROR_LIMIT_EXCEEDED);
               return false;
           }
@@ -525,6 +557,7 @@ bool SparkProtocol::send_event(const char *event_name, const char *data, int ttl
     if (now - recent_event_ticks[evt_tick_idx] < 1000)
     {
       // exceeded allowable burst of 4 events per second
+      g_rateLimitedEventsCounter++;
       handler.setError(SYSTEM_ERROR_LIMIT_EXCEEDED);
       return false;
     }
@@ -1081,18 +1114,10 @@ bool SparkProtocol::handle_chunk(msg& message)
     last_chunk_millis = callbacks.millis();
 
     uint8_t* msg_to_send = message.response;
-    // send ACK
-    *msg_to_send = 0;
-    *(msg_to_send + 1) = 16;
-    empty_ack(msg_to_send + 2, queue[2], queue[3]);
-    if (0 > blocking_send(msg_to_send, 18))
-    {
-      // error
-      return false;
-    }
+
     LOG(INFO,"chunk");
     if (!this->updating) {
-        LOG(WARN,"got chunk when not updating");
+        //LOG(WARN,"got chunk when not updating");
         return true;
     }
 
@@ -1114,6 +1139,20 @@ bool SparkProtocol::handle_chunk(msg& message)
         option++;
         payload += (queue[payload]&0xF)+1;  // increase by the size. todo handle > 11
     }
+
+    if (!fast_ota) {
+        // Send ACK
+        // Issue #1240: The firmware should not ACK every Chunk message in Fast OTA mode
+        *msg_to_send = 0;
+        *(msg_to_send + 1) = 16;
+        empty_ack(msg_to_send + 2, queue[2], queue[3]);
+        if (0 > blocking_send(msg_to_send, 18))
+        {
+          // error
+          return false;
+        }
+    }
+
     if (0xFF==queue[payload])
     {
         payload++;
@@ -1125,15 +1164,19 @@ bool SparkProtocol::handle_chunk(msg& message)
             return false;
         }
         uint32_t crc = callbacks.calculate_crc(chunk, file.chunk_size);
-        bool has_response = false;
+        size_t response_size = 0;
         bool crc_valid = (crc == given_crc);
         LOG(INFO,"chunk idx=%d crc=%d fast=%d updating=%d", chunk_index, crc_valid, fast_ota, updating);
         if (crc_valid)
         {
             callbacks.save_firmware_chunk(file, chunk, NULL);
-            if (!fast_ota || (updating!=2 && (true || (chunk_index & 32)==0))) {
+            //if (!fast_ota || (updating!=2 && (true || (chunk_index & 32)==0))) {
+            // Issue #1240:
+            // In Fast OTA mode, the firmware should not respond to every Chunk message
+            // (especially because they are NON confirmable messages).
+            if (!fast_ota) {
                 chunk_received(msg_to_send + 2, message.token, ChunkReceivedCode::OK);
-                has_response = true;
+                response_size = 18;
             }
             flag_chunk_received(chunk_index);
             if (updating==2) {                      // clearing up missed chunks at the end of fast OTA
@@ -1141,16 +1184,15 @@ bool SparkProtocol::handle_chunk(msg& message)
                 if (next_missed==NO_CHUNKS_MISSING) {
                     LOG(INFO,"received all chunks");
                     reset_updating();
-                    notify_update_done(msg_to_send);
-                    callbacks.finish_firmware_update(file, 1, NULL);
-                    has_response = true;
+                    response_size = notify_update_done(msg_to_send, 0, 0);
+                    callbacks.finish_firmware_update(file, UpdateFlag::SUCCESS, NULL);
                 }
                 else {
-                    if (has_response && 0 > blocking_send(msg_to_send, 18)) {
+                    if (response_size && 0 > blocking_send(msg_to_send, 18)) {
                         LOG(WARN,"send chunk response failed");
                         return false;
                     }
-                    has_response = false;
+                    response_size = 0;
 
                     if (next_missed>missed_chunk_index)
                         send_missing_chunks(MISSED_CHUNKS_TO_SEND);
@@ -1161,12 +1203,12 @@ bool SparkProtocol::handle_chunk(msg& message)
         else if (!fast_ota)
         {
             chunk_received(msg_to_send + 2, message.token, ChunkReceivedCode::BAD);
-            has_response = true;
+            response_size = 18;
             LOG(WARN,"chunk bad %d", chunk_index);
         }
         // fast OTA will request the chunk later
 
-        if (has_response && 0 > blocking_send(msg_to_send, 18))
+        if (response_size && 0 > blocking_send(msg_to_send, response_size))
         {
           // error
           return false;
@@ -1211,6 +1253,33 @@ void SparkProtocol::set_chunks_received(uint8_t value)
     	memset(queue+QUEUE_SIZE-bytes, value, bytes);
 }
 
+size_t SparkProtocol::notify_update_done(uint8_t* msg, token_t token, uint8_t code)
+{
+    size_t msgsz = 0;
+    char buf[255];
+    size_t data_len = 0;
+
+    memset(buf, 0, sizeof(buf));
+    if (code != ChunkReceivedCode::BAD) {
+        callbacks.finish_firmware_update(file, UpdateFlag::SUCCESS | UpdateFlag::VALIDATE_ONLY, buf);
+        data_len = strnlen(buf, sizeof(buf) - 1);
+    }
+
+    if (code) {
+        // Send as ACK
+        msgsz = Messages::coded_ack(msg + 2, token, code, queue[2], queue[3], (uint8_t*)buf, data_len);
+    } else {
+        // Send as UpdateDone
+        unsigned short message_id = next_message_id();
+        msgsz = Messages::update_done(msg + 2, message_id, (uint8_t*)buf, data_len, false);
+    }
+
+    LOG(INFO, "Update done %02x", code);
+    LOG_DEBUG(TRACE, "%s", buf);
+
+    return wrap(msg, msgsz);
+}
+
 bool SparkProtocol::handle_update_done(msg& message)
 {
     // send ACK 2.04
@@ -1220,9 +1289,11 @@ bool SparkProtocol::handle_update_done(msg& message)
     *(msg_to_send + 1) = 16;
     chunk_index_t index = next_chunk_missing(0);
     bool missing = index!=NO_CHUNKS_MISSING;
-    coded_ack(msg_to_send + 2, message.token, missing ? ChunkReceivedCode::BAD : ChunkReceivedCode::OK, queue[2], queue[3]);
     LOG(WARN,"update done: received, has missing chunks %d", missing);
-    if (0 > blocking_send(msg_to_send, 18))
+
+    size_t response_size = notify_update_done(msg_to_send, message.token,
+                                              missing ? ChunkReceivedCode::BAD : ChunkReceivedCode::OK);
+    if (0 > blocking_send(msg_to_send, response_size))
     {
         // error
         return false;
@@ -1231,7 +1302,7 @@ bool SparkProtocol::handle_update_done(msg& message)
     if (!missing) {
         LOG(INFO,"update done: all done!");
         reset_updating();
-        callbacks.finish_firmware_update(file, 1, NULL);
+        callbacks.finish_firmware_update(file, UpdateFlag::SUCCESS, NULL);
     }
     else {
         updating = 2;       // flag that we are sending missing chunks.
@@ -1423,11 +1494,9 @@ bool SparkProtocol::handle_message(msg& message, token_t token, CoAPMessageType:
   {
     case CoAPMessageType::DESCRIBE:
     {
-        int desc_flags = DESCRIBE_ALL;
-        if (message.len > 8 && queue[8] <= DESCRIBE_ALL) {
+        int desc_flags = DESCRIBE_DEFAULT;
+        if (message_padding_strip(queue, message.len) > 8 && queue[8] <= DESCRIBE_MAX) {
             desc_flags = queue[8];
-        } else if (message.len > 8) {
-            LOG(WARN, "Invalid DESCRIBE flags %02x", queue[8]);
         }
 
         if (!send_description(desc_flags, message)) {
@@ -1621,8 +1690,13 @@ unsigned char SparkProtocol::next_token()
 
 void SparkProtocol::encrypt(unsigned char *buf, int length)
 {
+#ifdef USE_MBEDTLS
+  mbedtls_aes_setkey_enc(&aes, key, 128);
+  mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_ENCRYPT, round_to_16(length), iv_send, buf, buf);
+#else
   aes_setkey_enc(&aes, key, 128);
   aes_crypt_cbc(&aes, AES_ENCRYPT, length, iv_send, buf, buf);
+#endif
   memcpy(iv_send, buf, 16);
 }
 
@@ -1662,7 +1736,7 @@ void SparkProtocol::separate_response_with_payload(unsigned char *buf,
 
 int SparkProtocol::set_key(const unsigned char *signed_encrypted_credentials)
 {
-  unsigned char credentials[40];
+  unsigned char credentials[128];
   unsigned char hmac[20];
 
   if (0 != decipher_aes_credentials(core_private_key,
@@ -1727,3 +1801,48 @@ inline void SparkProtocol::coded_ack(unsigned char *buf,
 
   encrypt(buf, 16);
 }
+
+int SparkProtocol::command(ProtocolCommands::Enum command, uint32_t data)
+{
+  int result = UNKNOWN;
+  switch (command) {
+  case ProtocolCommands::SLEEP:
+  case ProtocolCommands::DISCONNECT:
+    result = !this->wait_confirmable() ? NO_ERROR : UNKNOWN;
+    break;
+  case ProtocolCommands::TERMINATE:
+    ack_handlers.clear();
+    result = NO_ERROR;
+    break;
+  }
+  return result;
+}
+
+int SparkProtocol::wait_confirmable(uint32_t timeout)
+{
+  bool st = true;
+
+  if (ack_handlers.size() != 0) {
+    system_tick_t start = callbacks.millis();
+    LOG(INFO, "Waiting for Confirmed messages to be ACKed.");
+
+    while (((ack_handlers.size() != 0) && (callbacks.millis()-start)<timeout))
+    {
+      CoAPMessageType::Enum message;
+      st = event_loop(message);
+      if (!st)
+      {
+        LOG(WARN, "error receiving acknowledgements");
+        break;
+      }
+    }
+    LOG(INFO, "All Confirmed messages sent: %s",
+        (ack_handlers.size() != 0) ? "no" : "yes");
+
+    ack_handlers.clear();
+  }
+
+  return (int)(!st);
+}
+
+#endif // !PARTICLE_PROTOCOL

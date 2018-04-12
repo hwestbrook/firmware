@@ -33,9 +33,9 @@ Open up a terminal window, navigate to your destination directory and type the f
 Make sure you have downloaded and installed all the required dependencies as mentioned [previously](dependencies.md#1-download-and-install-dependencies).
 Note, if you've downloaded or cloned these previously, you'll want to `git pull` or redownload all of them before proceeding.
 
-Open up a terminal window, and switch branch to 'latest'
+Open up a terminal window, and switch branch to 'release/stable'
 
-    git checkout latest
+    git checkout release/stable
 
 Navigate to the `modules` folder under firmware
 (i.e. `cd firmware/modules`) and type:
@@ -54,6 +54,12 @@ The [makefile documentation](build.md) describes the build options supported and
 
 * You get `make: *** No targets specified and no makefile found.  Stop.`
   Solution: `cd firmware/main`
+
+* GCC does not know what an .ino file is, so your application is empty.
+  Solution: rename yourapp.ino file to yourapp.cpp
+
+* GCC shows errors for Particle specific commands.
+  Solution: #include "application.h"
 
 Please issue a pull request if you come across similar issues/fixes that trip you up.
 

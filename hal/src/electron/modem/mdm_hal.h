@@ -46,6 +46,9 @@ public:
     //! get static instance
     static MDMParser* getInstance() { return inst; };
 
+    /* Used to set the power mode used in MDMParser::init() */
+    void setPowerMode(int mode);
+
     /* Used to cancel all operations */
     void cancel(void);
 
@@ -61,7 +64,7 @@ public:
         \return true if successful, false otherwise
     */
     bool connect(const char* simpin = NULL,
-            const char* apn = "spark.telefonica.com", const char* username = NULL,
+            const char* apn = NULL, const char* username = NULL,
             const char* password = NULL, Auth auth = AUTH_DETECT);
 
     /**
@@ -144,7 +147,7 @@ public:
 
     /** Setup the PDP context
     */
-    bool pdp(const char* apn = "spark.telefonica.com");
+    bool pdp(const char* apn = NULL);
 
     // ----------------------------------------------------------------
     // Data Connection (GPRS)
@@ -157,7 +160,7 @@ public:
         \param auth is the authentication mode (CHAP,PAP,NONE or DETECT)
         \return the ip that is assigned
     */
-    MDM_IP join(const char* apn = "spark.telefonica.com", const char* username = NULL,
+    MDM_IP join(const char* apn = NULL, const char* username = NULL,
                        const char* password = NULL, Auth auth = AUTH_DETECT);
 
     /** deregister (detach) the MT from the GPRS service.
@@ -412,6 +415,9 @@ public:
     */
     int sendFormated(const char* format, ...);
 
+    /** This method is similar to sendFormated() but takes the formatting arguments as va_list */
+    int sendFormattedWithArgs(const char* format, va_list args);
+
     /** callback function for #waitFinalResp with void* as argument
         \param type the #getLine response
         \param buf the parsed line
@@ -445,6 +451,24 @@ public:
     {
         return waitFinalResp((_CALLBACKPTR)cb, (void*)param, timeout_ms);
     }
+
+    /** Send AT command and wait for a response.
+        \param fmt the format string (CRLF terminated)
+        \param args the formatting arguments
+        \param cb the optional callback function
+        \param param the optional callback function parameter
+        \param timeout the response timeout in milliseconds
+        \sa sendFormated
+        \sa waitFinalResp
+    */
+    int sendCommandWithArgs(const char* fmt, va_list args, _CALLBACKPTR cb = NULL, void* param = NULL,
+            system_tick_t timeout = 10000);
+
+    /** Acquires the modem lock. */
+    void lock();
+
+    /** Releases the modem lock. */
+    void unlock();
 
 protected:
     /** Write bytes to the physical interface. This function should be
@@ -486,12 +510,7 @@ protected:
         \param index the index of the received SMS
     */
     void SMSreceived(int index);
-protected:
-    // for rtos over riding by useing Rtos<MDMxx>
-    //! override the lock in a rtos system
-    virtual void lock(void)        { }
-    //! override the unlock in a rtos system
-    virtual void unlock(void)      { }
+
 protected:
     // parsing callbacks for different AT commands and their parameter arguments
     static int _cbString(int type, const char* buf, int len, char* str);
@@ -562,6 +581,7 @@ protected:
     bool _activated;
     bool _attached;
     bool _attached_urc;
+    int _power_mode;
     volatile bool _cancel_all_operations;
 #ifdef MDM_DEBUG
     int _debugLevel;
@@ -603,7 +623,7 @@ public:
     }
 
     void pause();
-    void resume();
+    void resumeRecv();
 
 protected:
     /** Write bytes to the physical interface.

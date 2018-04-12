@@ -140,8 +140,6 @@ bool is_valid(ip::udp::socket& handle) {
 
 class TCPServer
 {
-	uint16_t _port;
-
 	ip::tcp::acceptor acceptor;
 
 	void accept_handler(const boost::system::error_code& error)
@@ -166,8 +164,7 @@ class TCPServer
 
 public:
 	TCPServer(uint16_t port)
-		: _port(port),
-		  acceptor(device_io_service, ip::tcp::endpoint(ip::tcp::v4(), port))
+		: acceptor(device_io_service, ip::tcp::endpoint(ip::tcp::v4(), port))
 	{
 		acceptor.non_blocking(true);
 	}
@@ -312,6 +309,11 @@ sock_result_t socket_send(sock_handle_t sd, const void* buffer, socklen_t len)
     }
 }
 
+sock_result_t socket_send_ex(sock_handle_t sd, const void* buffer, socklen_t len, uint32_t flags, system_tick_t timeout, void* reserved)
+{
+    /* NOTE: non-blocking mode and timeouts are not supported */
+    return socket_send(sd, buffer, len);
+}
 
 sock_result_t socket_create_nonblocking_server(sock_handle_t sock, uint16_t port)
 {
@@ -407,6 +409,28 @@ sock_result_t socket_close(sock_handle_t socket)
     return 0;
 }
 
+sock_result_t socket_shutdown(sock_handle_t socket, int how)
+{
+    if (servers.is_valid(socket) || socket >= SOCKET_COUNT) {
+        return -1;
+    }
+    else
+    {
+        auto& s = tcp_from(socket);
+        auto shflags = boost::asio::ip::tcp::socket::shutdown_both;
+        if (how == SHUT_WR) {
+            shflags = boost::asio::ip::tcp::socket::shutdown_send;
+        } else if (how == SHUT_RD) {
+            shflags = boost::asio::ip::tcp::socket::shutdown_receive;
+        }
+        s.shutdown(shflags, ec);
+        return (sock_result_t)ec.value();
+    }
+
+    return -1;
+}
+
+
 
 sock_handle_t socket_create(uint8_t family, uint8_t type, uint8_t protocol, uint16_t port, network_interface_t nif)
 {
@@ -422,9 +446,7 @@ sock_handle_t socket_create(uint8_t family, uint8_t type, uint8_t protocol, uint
         if (result)				// error
             return result;
 
-        std::string address_mcast = "224.0.0.251";
-        boost::asio::ip::address mcast_addr = boost::asio::ip::address::from_string(address_mcast, ec);
-        boost::asio::ip::udp::endpoint listen_endpoint(mcast_addr, port);
+        boost::asio::ip::udp::endpoint listen_endpoint(ip::udp::v4(), port);
         socket.open(listen_endpoint.protocol(), ec);
 
         socket.set_option(boost::asio::ip::udp::socket::reuse_address(true));

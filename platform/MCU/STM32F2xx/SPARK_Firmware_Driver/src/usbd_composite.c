@@ -35,6 +35,8 @@
 
 LOG_SOURCE_CATEGORY("usb.composite")
 
+extern void HAL_USB_Vendor_Interface_SOF(void* pdev);
+
 #define USBD_COMPOSITE_USRSTR_BASE 0x09
 
 static USBD_Composite_Class_Data s_Class_Entries[USBD_COMPOSITE_MAX_CLASSES] = { {0} };
@@ -161,7 +163,7 @@ USBD_Class_cb_TypeDef* USBD_Composite_Instance(USBD_Composite_Configuration_Call
 static uint8_t USBD_Composite_Init(void* pdev, uint8_t cfgidx) {
   uint8_t status = USBD_OK;
 
-  LOG_DEBUG(TRACE, "Initializing (0x%x)", cfgidx);
+  //LOG_DEBUG(TRACE, "Initializing (0x%x)", cfgidx);
 
   for(USBD_Composite_Class_Data* c = s_Classes; c != NULL; c = c->next) {
     if(c->active && c->cb->Init) {
@@ -184,7 +186,7 @@ static uint8_t USBD_Composite_DeInit(void* pdev, uint8_t cfgidx) {
 
   s_Initialized = 0;
 
-  LOG_DEBUG(TRACE, "DeInitializing (0x%x)", cfgidx);
+  //LOG_DEBUG(TRACE, "DeInitializing (0x%x)", cfgidx);
 
   for(USBD_Composite_Class_Data* c = s_Classes; c != NULL; c = c->next) {
     if(c->active && c->cb->DeInit) {
@@ -244,7 +246,7 @@ static uint8_t USBD_Composite_DataIn(void* pdev, uint8_t epnum) {
         // Class handled this endpoint?
         if (c->cb->DataIn(pdev, c, epnum) == USBD_OK)
           return USBD_OK;
-        LOG_DEBUG(ERROR, "FAIL %x %d", (void*)c, epnum);
+        //LOG_DEBUG(ERROR, "FAIL %x %d", (void*)c, epnum);
       }
     }
   }
@@ -261,7 +263,7 @@ static uint8_t USBD_Composite_DataOut(void* pdev , uint8_t epnum) {
         // Class handled this endpoint?
         if (c->cb->DataOut(pdev, c, epnum) == USBD_OK)
           return USBD_OK;
-        LOG_DEBUG(ERROR, "FAIL %x %d", (void*)c, epnum);
+        //LOG_DEBUG(ERROR, "FAIL %x %d", (void*)c, epnum);
       }
     }
   }
@@ -275,6 +277,8 @@ static uint8_t USBD_Composite_SOF(void *pdev) {
       c->cb->SOF(pdev, c);
     }
   }
+
+  HAL_USB_Vendor_Interface_SOF(pdev);
 
   return USBD_OK;
 }
@@ -399,8 +403,8 @@ static uint16_t USBD_Build_CfgDesc(uint8_t* buf, uint8_t speed, uint8_t other) {
   *(buf + USBD_COMPOSITE_CFGDESC_HEADER_OFFSET_NUM_INTERFACES) = activeInterfaces;
   *((uint16_t *)(buf + USBD_COMPOSITE_CFGDESC_HEADER_OFFSET_TOTAL_LENGTH)) = totalLength;
 
-  LOG_DEBUG(TRACE, "Built configuration (0x%x): %d bytes, %d total interfaces, %d active",
-            configValue, totalLength, totalInterfaces, activeInterfaces);
+  // LOG_DEBUG(TRACE, "Built configuration (0x%x): %d bytes, %d total interfaces, %d active",
+  //           configValue, totalLength, totalInterfaces, activeInterfaces);
 
   return totalLength;
 }

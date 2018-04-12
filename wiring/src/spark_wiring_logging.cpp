@@ -31,13 +31,16 @@
 
 #include "spark_wiring_interrupts.h"
 
-#if defined(DEBUG_BUILD) && PLATFORM_ID != 3
-// When compiled with DEBUG_BUILD=y use ATOMIC_BLOCK
-# define LOG_WITH_LOCK(x) ATOMIC_BLOCK()
+// Uncomment to enable logging in interrupt handlers
+// #define LOG_FROM_ISR
+
+#if defined(LOG_FROM_ISR) && PLATFORM_ID != 3
+// When compiled with LOG_FROM_ISR defined use ATOMIC_BLOCK
+#define LOG_WITH_LOCK(x) ATOMIC_BLOCK()
 #else
 // Otherwise use mutex
-# define LOG_WITH_LOCK(x) WITH_LOCK(x)
-#endif // DEBUG_BUILD
+#define LOG_WITH_LOCK(x) WITH_LOCK(x)
+#endif
 
 namespace {
 
@@ -94,23 +97,30 @@ using namespace spark;
 */
 class JSONRequestHandler {
 public:
-    static bool process(char *buf, size_t bufSize, size_t reqSize, size_t *repSize) {
-        const JSONValue jsonReq = JSONValue::parse(buf, reqSize);
+    static void process(ctrl_request* ctrlReq) {
+        // TODO: Refactor this code once we introduce a high-level API for the control requests
+        const JSONValue jsonReq = JSONValue::parse(ctrlReq->request_data, ctrlReq->request_size);
         if (!jsonReq.isValid()) {
-            return false; // Parsing error
+            system_ctrl_set_result(ctrlReq, SYSTEM_ERROR_BAD_DATA, nullptr, nullptr, nullptr); // Parsing error
+            return;
         }
         Request req;
         if (!parseRequest(jsonReq, &req)) {
-            return false;
+            system_ctrl_set_result(ctrlReq, SYSTEM_ERROR_BAD_DATA, nullptr, nullptr, nullptr);
+            return;
         }
-        JSONBufferWriter writer(buf, bufSize);
+        const size_t replyBufSize = 256;
+        if (system_ctrl_alloc_reply_data(ctrlReq, replyBufSize, nullptr) != 0) {
+            system_ctrl_set_result(ctrlReq, SYSTEM_ERROR_NO_MEMORY, nullptr, nullptr, nullptr);
+            return;
+        }
+        JSONBufferWriter writer(ctrlReq->reply_data, ctrlReq->reply_size);
         if (!processRequest(req, writer)) {
-            return false;
+            system_ctrl_set_result(ctrlReq, SYSTEM_ERROR_UNKNOWN, nullptr, nullptr, nullptr); // FIXME
+            return;
         }
-        if (repSize) {
-            *repSize = writer.dataSize();
-        }
-        return true;
+        ctrlReq->reply_size = writer.dataSize();
+        system_ctrl_set_result(ctrlReq, SYSTEM_ERROR_NONE, nullptr, nullptr, nullptr);
     }
 
 private:
@@ -664,6 +674,7 @@ spark::LogManager::LogManager() {
     handlerFactory_ = DefaultLogHandlerFactory::instance();
     streamFactory_ = DefaultOutputStreamFactory::instance();
 #endif
+    outputActive_ = false;
 }
 
 spark::LogManager::~LogManager() {
@@ -822,42 +833,51 @@ void spark::LogManager::resetSystemCallbacks() {
 }
 
 void spark::LogManager::logMessage(const char *msg, int level, const char *category, const LogAttributes *attr, void *reserved) {
-#ifndef DEBUG_BUILD
-    // No-op when DEBUG_BUILD=n
-    if (HAL_IsISR())
+#ifndef LOG_FROM_ISR
+    if (HAL_IsISR()) {
         return;
-#endif // DEBUG_BUILD
-
+    }
+#endif
     LogManager *that = instance();
     LOG_WITH_LOCK(that->mutex_) {
+        // prevent re-entry
+        if (that->isActive()) {
+            return;
+        }
+        that->setActive(true);
         for (LogHandler *handler: that->activeHandlers_) {
             handler->message(msg, (LogLevel)level, category, *attr);
         }
+        that->setActive(false);
     }
 }
 
 void spark::LogManager::logWrite(const char *data, size_t size, int level, const char *category, void *reserved) {
-#ifndef DEBUG_BUILD
-    // No-op when DEBUG_BUILD=n
-    if (HAL_IsISR())
+#ifndef LOG_FROM_ISR
+    if (HAL_IsISR()) {
         return;
-#endif // DEBUG_BUILD
-
+    }
+#endif
     LogManager *that = instance();
     LOG_WITH_LOCK(that->mutex_) {
+        // prevent re-entry
+        if (that->isActive()) {
+            return;
+        }
+        that->setActive(true);
         for (LogHandler *handler: that->activeHandlers_) {
             handler->write(data, size, (LogLevel)level, category);
         }
+        that->setActive(false);
     }
 }
 
 int spark::LogManager::logEnabled(int level, const char *category, void *reserved) {
-#ifndef DEBUG_BUILD
-    // No-op when DEBUG_BUILD=n
-    if (HAL_IsISR())
+#ifndef LOG_FROM_ISR
+    if (HAL_IsISR()) {
         return 0;
-#endif // DEBUG_BUILD
-
+    }
+#endif
     LogManager *that = instance();
     int minLevel = LOG_LEVEL_NONE;
     LOG_WITH_LOCK(that->mutex_) {
@@ -871,14 +891,19 @@ int spark::LogManager::logEnabled(int level, const char *category, void *reserve
     return (level >= minLevel);
 }
 
+inline bool spark::LogManager::isActive() const {
+    return outputActive_;
+}
+
+inline void spark::LogManager::setActive(bool outputActive) {
+    outputActive_ = outputActive;
+}
+
 #if Wiring_LogConfig
 
 // spark::
-bool spark::logProcessConfigRequest(char *buf, size_t bufSize, size_t reqSize, size_t *repSize, DataFormat fmt) {
-    if (fmt == DATA_FORMAT_JSON) {
-        return JSONRequestHandler::process(buf, bufSize, reqSize, repSize);
-    }
-    return false; // Unsupported request format
+void spark::logProcessControlRequest(ctrl_request* req) {
+    JSONRequestHandler::process(req);
 }
 
 #endif // Wiring_LogConfig

@@ -159,6 +159,12 @@ sock_result_t socket_close(sock_handle_t sock)
     return closesocket(sock);
 }
 
+sock_result_t socket_shutdown(sock_handle_t sd, int how)
+{
+    // Not supported
+    return -1;
+}
+
 sock_handle_t socket_create(uint8_t family, uint8_t type, uint8_t protocol, uint16_t port, network_interface_t nif)
 {
     sock_handle_t sock = socket(family, type, protocol);
@@ -179,6 +185,12 @@ sock_handle_t socket_create(uint8_t family, uint8_t type, uint8_t protocol, uint
 sock_result_t socket_send(sock_handle_t sd, const void* buffer, socklen_t len)
 {
     return send(sd, buffer, len, 0);
+}
+
+sock_result_t socket_send_ex(sock_handle_t sd, const void* buffer, socklen_t len, uint32_t flags, system_tick_t timeout, void* reserved)
+{
+    /* NOTE: non-blocking mode and timeouts are not supported */
+    return socket_send(sd, buffer, len);
 }
 
 sock_result_t socket_sendto(sock_handle_t sd, const void* buffer, socklen_t len, uint32_t flags, sockaddr_t* addr, socklen_t addr_size)

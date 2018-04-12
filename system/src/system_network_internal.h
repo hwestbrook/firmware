@@ -24,11 +24,13 @@
 #include "rgbled.h"
 #include "spark_wiring_led.h"
 #include "spark_wiring_ticks.h"
+#include "spark_wiring_diagnostics.h"
 #include "system_event.h"
 #include "system_cloud_internal.h"
 #include "system_network.h"
 #include "system_threading.h"
 #include "system_mode.h"
+#include "system_power.h"
 
 using namespace particle;
 
@@ -93,6 +95,73 @@ private:
 #define LOG_NETWORK_STATE()
 #endif
 
+namespace particle {
+
+class NetworkDiagnostics {
+public:
+    // Note: Use odd numbers to encode transitional states
+    enum Status {
+        TURNED_OFF = 0,
+        TURNING_ON = 1,
+        DISCONNECTED = 2,
+        CONNECTING = 3,
+        CONNECTED = 4,
+        DISCONNECTING = 5,
+        TURNING_OFF = 7
+    };
+
+    NetworkDiagnostics() :
+            status_(DIAG_ID_NETWORK_CONNECTION_STATUS, DIAG_NAME_NETWORK_CONNECTION_STATUS, TURNED_OFF),
+            disconnReason_(DIAG_ID_NETWORK_DISCONNECTION_REASON, DIAG_NAME_NETWORK_DISCONNECTION_REASON, NETWORK_DISCONNECT_REASON_NONE),
+            disconnCount_(DIAG_ID_NETWORK_DISCONNECTS, DIAG_NAME_NETWORK_DISCONNECTS),
+            connCount_(DIAG_ID_NETWORK_CONNECTION_ATTEMPTS, DIAG_NAME_NETWORK_CONNECTION_ATTEMPTS),
+            lastError_(DIAG_ID_NETWORK_CONNECTION_ERROR_CODE, DIAG_NAME_NETWORK_CONNECTION_ERROR_CODE) {
+    }
+
+    NetworkDiagnostics& status(Status status) {
+        status_ = status;
+        return *this;
+    }
+
+    NetworkDiagnostics& connectionAttempt() {
+        ++connCount_;
+        return *this;
+    }
+
+    NetworkDiagnostics& resetConnectionAttempts() {
+        connCount_ = 0;
+        return *this;
+    }
+
+    NetworkDiagnostics& disconnectionReason(network_disconnect_reason reason) {
+        disconnReason_ = reason;
+        return *this;
+    }
+
+    NetworkDiagnostics& disconnectedUnexpectedly() {
+        ++disconnCount_;
+        return *this;
+    }
+
+    NetworkDiagnostics& lastError(int error) {
+        lastError_ = error;
+        return *this;
+    }
+
+    static NetworkDiagnostics* instance();
+
+private:
+    // Some of the diagnostic data sources use the synchronization since they can be updated from
+    // the networking service thread
+    AtomicEnumDiagnosticData<Status> status_;
+    AtomicEnumDiagnosticData<network_disconnect_reason> disconnReason_;
+    AtomicIntegerDiagnosticData disconnCount_;
+    SimpleIntegerDiagnosticData connCount_;
+    SimpleIntegerDiagnosticData lastError_;
+};
+
+} // namespace particle
+
 /**
  * Internal network interface class to provide polymorphic behavior for each
  * network type.  This is not part of the dynalib so functions can freely evolve.
@@ -111,7 +180,7 @@ struct NetworkInterface
     /**
      * Force a manual disconnct.
      */
-    virtual void disconnect()=0;
+    virtual void disconnect(network_disconnect_reason reason) = 0;
 
     /**
      * @return {@code true} if this connection was manually taken down.
@@ -136,6 +205,9 @@ struct NetworkInterface
     virtual void update_config(bool force=false)=0;
     virtual void* config()=0;       // not really happy about lack of type
 
+    virtual int set_hostname(const char* hostname)=0;
+    virtual int get_hostname(char* buffer, size_t buffer_len, bool noDefault=false)=0;
+
 };
 
 
@@ -146,7 +218,6 @@ private:
     volatile uint8_t WLAN_DELETE_PROFILES;
     volatile uint8_t WLAN_SMART_CONFIG_START; // Set to 'true' when listening mode is pending
     volatile uint8_t WLAN_SMART_CONFIG_ACTIVE;
-    volatile uint8_t WLAN_SMART_CONFIG_STOP;
     volatile uint8_t WLAN_SMART_CONFIG_FINISHED;
     volatile uint8_t WLAN_CONNECTED;
     volatile uint8_t WLAN_CONNECTING;
@@ -216,11 +287,10 @@ protected:
         LOG_NETWORK_STATE();
         WLAN_SMART_CONFIG_ACTIVE = 1;
         WLAN_SMART_CONFIG_FINISHED = 0;
-        WLAN_SMART_CONFIG_STOP = 0;
         WLAN_SERIAL_CONFIG_DONE = 0;
         bool wlanStarted = SPARK_WLAN_STARTED;
 
-        cloud_disconnect();
+        cloud_disconnect(true, false, CLOUD_DISCONNECT_REASON_LISTENING);
 
         if (system_thread_get_state(nullptr) == spark::feature::ENABLED) {
             LED_SIGNAL_START(LISTENING_MODE, NORMAL);
@@ -238,13 +308,13 @@ protected:
         system_notify_event(wifi_listen_begin, 0);
 
         /* Wait for SmartConfig/SerialConfig to finish */
-        while (network_listening(0, 0, NULL))
+        while (WLAN_SMART_CONFIG_ACTIVE && !WLAN_SMART_CONFIG_FINISHED && !WLAN_SERIAL_CONFIG_DONE)
         {
             if (WLAN_DELETE_PROFILES)
             {
                 // Get base color used for the listening mode indication
                 const LEDStatusData* status = led_signal_status(LED_SIGNAL_LISTENING_MODE, nullptr);
-                LEDStatus led(status ? status->color : RGB_COLOR_BLUE, LED_PRIORITY_IMPORTANT);
+                LEDStatus led(status ? status->color : RGB_COLOR_BLUE, LED_PRIORITY_CRITICAL);
                 led.setActive();
                 int toggle = 25;
                 while (toggle--)
@@ -276,6 +346,7 @@ protected:
                 console.loop();
             }
 #if PLATFORM_THREADING
+            SystemISRTaskQueue.process();
             if (!APPLICATION_THREAD_CURRENT()) {
                 SystemThread.process();
             }
@@ -314,10 +385,10 @@ protected:
     virtual void on_setup_cleanup()=0;
 
     virtual void connect_init()=0;
-    virtual void connect_finalize()=0;
+    virtual int connect_finalize()=0;
     virtual void disconnect_now()=0;
 
-    virtual void on_now()=0;
+    virtual int on_now()=0;
     virtual void off_now()=0;
 
     /**
@@ -325,6 +396,15 @@ protected:
      * @param external_process_complete If some external process triggered exit of listen mode.
      */
     virtual void on_finalize_listening(bool external_process_complete)=0;
+
+    virtual void config_hostname() {
+        char hostname[33] = {0};
+        if (get_hostname(hostname, sizeof(hostname), true) || strlen(hostname) == 0)
+        {
+            String deviceId = spark_deviceID();
+            set_hostname(deviceId.c_str());
+        }
+    }
 
 public:
 
@@ -361,7 +441,7 @@ public:
 
     bool listening() override
     {
-        return (WLAN_SMART_CONFIG_ACTIVE && !(WLAN_SMART_CONFIG_FINISHED || WLAN_SERIAL_CONFIG_DONE));
+        return (WLAN_SMART_CONFIG_START || WLAN_SMART_CONFIG_ACTIVE);
     }
 
     void set_listen_timeout(uint16_t timeout) override {
@@ -376,8 +456,8 @@ public:
     void connect(bool listen_enabled=true) override
     {
         LOG_NETWORK_STATE();
-        INFO("ready(): %d; connecting(): %d; listening(): %d; WLAN_SMART_CONFIG_START: %d", (int)ready(), (int)connecting(),
-                (int)listening(), (int)WLAN_SMART_CONFIG_START);
+        // INFO("ready(): %d; connecting(): %d; listening(): %d; WLAN_SMART_CONFIG_START: %d", (int)ready(), (int)connecting(),
+        //        (int)listening(), (int)WLAN_SMART_CONFIG_START);
         if (!ready() && !connecting() && !listening() && !WLAN_SMART_CONFIG_START) // Don't try to connect if listening mode is active or pending
         {
             bool was_sleeping = SPARK_WLAN_SLEEP;
@@ -400,17 +480,24 @@ public:
             }
             else
             {
+                config_hostname();
                 LED_SIGNAL_START(NETWORK_CONNECTING, NORMAL);
                 WLAN_CONNECTING = 1;
                 INFO("ARM_WLAN_WD 1");
                 ARM_WLAN_WD(CONNECT_TO_ADDRESS_MAX);    // reset the network if it doesn't connect within the timeout
+                const auto diag = NetworkDiagnostics::instance();
+                diag->status(NetworkDiagnostics::CONNECTING);
                 system_notify_event(network_status, network_status_connecting);
-                connect_finalize();
+                diag->connectionAttempt();
+                const int ret = connect_finalize();
+                if (ret != 0) {
+                    diag->lastError(ret);
+                }
             }
         }
     }
 
-    void disconnect() override
+    void disconnect(network_disconnect_reason reason = NETWORK_DISCONNECT_REASON_NONE) override
     {
         LOG_NETWORK_STATE();
         if (SPARK_WLAN_STARTED)
@@ -422,14 +509,24 @@ public:
             WLAN_CONNECTED = 0;
             WLAN_DHCP_PENDING = 0;
 
-            cloud_disconnect();
+            cloud_disconnect(true, false, CLOUD_DISCONNECT_REASON_NETWORK_DISCONNECT);
+            const auto diag = NetworkDiagnostics::instance();
             if (was_connected) {
+                diag->resetConnectionAttempts();
+                if (reason != NETWORK_DISCONNECT_REASON_NONE) {
+                    diag->disconnectionReason(reason);
+                    if (reason == NETWORK_DISCONNECT_REASON_ERROR || reason == NETWORK_DISCONNECT_REASON_RESET) {
+                        diag->disconnectedUnexpectedly();
+                    }
+                }
+                diag->status(NetworkDiagnostics::DISCONNECTING);
                 // "Disconnecting" event is generated only for a successfully established connection
                 system_notify_event(network_status, network_status_disconnecting);
             }
             disconnect_now();
             config_clear();
             if (was_connected || was_connecting) {
+                diag->status(NetworkDiagnostics::DISCONNECTED);
                 system_notify_event(network_status, network_status_disconnected);
             }
             LED_SIGNAL_STOP(NETWORK_CONNECTED);
@@ -453,13 +550,19 @@ public:
         LOG_NETWORK_STATE();
         if (!SPARK_WLAN_STARTED)
         {
+            const auto diag = NetworkDiagnostics::instance();
+            diag->status(NetworkDiagnostics::TURNING_ON);
             system_notify_event(network_status, network_status_powering_on);
             config_clear();
-            on_now();
+            const int ret = on_now();
+            if (ret != 0) {
+                diag->lastError(ret);
+            }
             update_config(true);
             SPARK_WLAN_STARTED = 1;
             SPARK_WLAN_SLEEP = 0;
             LED_SIGNAL_START(NETWORK_ON, BACKGROUND);
+            diag->status(NetworkDiagnostics::DISCONNECTED);
             system_notify_event(network_status, network_status_on);
         }
     }
@@ -469,8 +572,10 @@ public:
         LOG_NETWORK_STATE();
         if (SPARK_WLAN_STARTED)
         {
-            disconnect();
+            disconnect(NETWORK_DISCONNECT_REASON_NETWORK_OFF);
 
+            const auto diag = NetworkDiagnostics::instance();
+            diag->status(NetworkDiagnostics::TURNING_OFF);
             system_notify_event(network_status, network_status_powering_off);
             off_now();
 
@@ -486,6 +591,7 @@ public:
             WLAN_CONNECTING = 0;
             WLAN_SERIAL_CONFIG_DONE = 1;
             LED_SIGNAL_START(NETWORK_OFF, BACKGROUND);
+            diag->status(NetworkDiagnostics::TURNED_OFF);
             system_notify_event(network_status, network_status_off);
         }
     }
@@ -494,7 +600,6 @@ public:
     {
         LOG_NETWORK_STATE();
         WLAN_SMART_CONFIG_FINISHED = 1;
-        WLAN_SMART_CONFIG_STOP = 1;
     }
 
     void notify_connected()
@@ -515,12 +620,19 @@ public:
     void notify_disconnected()
     {
         LOG_NETWORK_STATE();
-        cloud_disconnect(false); // don't close the socket on the callback since this causes a lockup on the Core
+        // Don't close the socket on the callback since this causes a lockup on the Core
+        cloud_disconnect(false, false, CLOUD_DISCONNECT_REASON_NETWORK_DISCONNECT);
         if (WLAN_CONNECTING || WLAN_CONNECTED) {
+            // This code is executed only in case of an unsolicited disconnection, since the disconnect() method
+            // resets the WLAN_CONNECTING and WLAN_CONNECTED flags prior to closing the connection
+            const auto diag = NetworkDiagnostics::instance();
             if (WLAN_CONNECTED) {
+                diag->disconnectionReason(NETWORK_DISCONNECT_REASON_ERROR);
+                diag->disconnectedUnexpectedly();
                 // "Disconnecting" event is generated only for a successfully established connection
                 system_notify_event(network_status, network_status_disconnecting);
             }
+            diag->status(NetworkDiagnostics::DISCONNECTED);
             // "Connecting" event should be always followed by either "connected" or "disconnected" event
             system_notify_event(network_status, network_status_disconnected);
         }
@@ -547,16 +659,22 @@ public:
         WLAN_CONNECTING = 0;
         WLAN_DHCP_PENDING = 0;
         LED_SIGNAL_STOP(NETWORK_DHCP);
+        const auto diag = NetworkDiagnostics::instance();
         if (dhcp)
         {
             // notify_dhcp() is called even in case of static IP configuration, so here we notify
             // final connection state for both dynamic and static IP configurations
             INFO("CLR_WLAN_WD 1, DHCP success");
             CLR_WLAN_WD();
+#if PLATFORM_ID != 0
+            /* XXX: this causes a deadlock on Core */
+            update_config(true);
+#endif /* PLATFORM_ID != 0 */
             WLAN_CONNECTED = 1;
             WLAN_LISTEN_ON_FAILED_CONNECT = false;
             LED_SIGNAL_START(NETWORK_CONNECTED, BACKGROUND);
             LED_SIGNAL_STOP(NETWORK_CONNECTING);
+            diag->status(NetworkDiagnostics::CONNECTED);
             system_notify_event(network_status, network_status_connected);
         }
         else
@@ -569,7 +687,7 @@ public:
                 INFO("DHCP fail, ARM_WLAN_WD 4");
                 ARM_WLAN_WD(DISCONNECT_TO_RECONNECT);
             }
-
+            diag->status(NetworkDiagnostics::DISCONNECTED);
             // "Connecting" event should be always followed by either "connected" or "disconnected" event
             system_notify_event(network_status, network_status_disconnected);
         }
@@ -599,10 +717,10 @@ public:
         // 2. CC3000 established AP connection
         // 3. DHCP IP is configured
         // then send mDNS packet to stop external SmartConfig application
-        if ((WLAN_SMART_CONFIG_STOP == 1) && (WLAN_CONNECTED == 1))
+        if ((WLAN_SMART_CONFIG_FINISHED == 1) && (WLAN_CONNECTED == 1))
         {
             on_setup_cleanup();
-            WLAN_SMART_CONFIG_STOP = 0;
+            WLAN_SMART_CONFIG_FINISHED = 0;
         }
     }
 };
@@ -673,7 +791,6 @@ inline void NetworkStateLogger::dump() const {
     NETWORK_STATE_PRINTF("WLAN_DELETE_PROFILES: %d\r\n", (int)nif_.WLAN_DELETE_PROFILES);
     NETWORK_STATE_PRINTF("WLAN_SMART_CONFIG_START: %d\r\n", (int)nif_.WLAN_SMART_CONFIG_START);
     NETWORK_STATE_PRINTF("WLAN_SMART_CONFIG_ACTIVE: %d\r\n", (int)nif_.WLAN_SMART_CONFIG_ACTIVE);
-    NETWORK_STATE_PRINTF("WLAN_SMART_CONFIG_STOP: %d\r\n", (int)nif_.WLAN_SMART_CONFIG_STOP);
     NETWORK_STATE_PRINTF("WLAN_SMART_CONFIG_FINISHED: %d\r\n", (int)nif_.WLAN_SMART_CONFIG_FINISHED);
     NETWORK_STATE_PRINTF("WLAN_CONNECTED: %d\r\n", (int)nif_.WLAN_CONNECTED);
     NETWORK_STATE_PRINTF("WLAN_CONNECTING: %d\r\n", (int)nif_.WLAN_CONNECTING);
