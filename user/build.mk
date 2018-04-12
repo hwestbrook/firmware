@@ -41,6 +41,9 @@ endif
 ifeq ($(ALTRAC_DEVICE), 310)
 	CFLAGS += -DENDPOINT_310
 endif
+ifeq ($(ALTRAC_DEVICE), WD_100)
+	CFLAGS += -DENDPOINT_WD_100
+endif
 
 ifneq ($(wildcard $(APPROOT)/project.properties),)
 	ifneq ($(wildcard $(APPROOT)/src),)
