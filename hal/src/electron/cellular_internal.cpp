@@ -16,10 +16,12 @@ namespace detail {
                 return CELLULAR_NETPROV_TWILIO;
             }
             else {
-                return CELLULAR_NETPROV_TELEFONICA;
+                // return CELLULAR_NETPROV_TELEFONICA;
+                return CELLULAR_NETPROV_PODS;
             }
         }
-        return CELLULAR_NETPROV_TELEFONICA; // default to telefonica
+        // return CELLULAR_NETPROV_TELEFONICA; // default to telefonica
+        return CELLULAR_NETPROV_PODS; // default to pods
     }
 } // namespace detail
 
