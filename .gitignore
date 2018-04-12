@@ -53,3 +53,16 @@ nbproject/
 build/target/
 build/cores/
 hal/soft-ap/.idea/
+
+# User binaries
+/binaries
+
+# User Applications
+/user/applications/firmware_wind-machine
+/user/applications/test_wind-machine
+/user/applications/firmware_weather-sdi
+/user/applications/firmware_valve
+/user/applications/firmware_pump-relay
+/user/applications/firmware_flow-meter
+/user/applications/firmware_emissions-testing
+/user/applications/firmware_bin-dicator
