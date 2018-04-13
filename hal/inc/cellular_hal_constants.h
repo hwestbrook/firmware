@@ -37,9 +37,9 @@ typedef int (*_CALLBACKPTR_MDM)(int type, const char* buf, int len, void* param)
 
 typedef void (*_CELLULAR_SMS_CB_MDM)(void* data, int index);
 
+// DEFINE_NET_PROVIDER( CELLULAR_NETPROV_TELEFONICA, "spark.telefonica.com", (23*60), (5684) ),
 #define DEFINE_NET_PROVIDER_DATA \
-    // DEFINE_NET_PROVIDER( CELLULAR_NETPROV_TELEFONICA, "spark.telefonica.com", (23*60), (5684) ),  \
-    DEFINE_NET_PROVIDER( CELLULAR_NETPROV_PODS, "data641003", (2*60), (0) ),  \
+    DEFINE_NET_PROVIDER( CELLULAR_NETPROV_PODS, "data641003", (2*60), (5684) ),  \
     DEFINE_NET_PROVIDER( CELLULAR_NETPROV_TWILIO, "wireless.twilio.com", (23*60), (4500) ),  \
     DEFINE_NET_PROVIDER( CELLULAR_NETPROV_MAX, "", (0), (0) )
 
