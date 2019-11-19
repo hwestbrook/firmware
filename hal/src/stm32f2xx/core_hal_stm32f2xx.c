@@ -199,6 +199,9 @@ typedef enum Feature_Flag {
 
 static Last_Reset_Info last_reset_info = { RESET_REASON_NONE, 0 };
 
+static volatile uint32_t feature_flags = 0;
+static volatile bool feature_flags_loaded = false;
+
 /* Private function prototypes -----------------------------------------------*/
 extern uint32_t HAL_Interrupts_Pin_IRQn(pin_t pin);
 
@@ -291,18 +294,26 @@ static int Write_Feature_Flag(uint32_t flag, bool value, bool *prev_value)
             return result;
         }
     }
+    feature_flags = flags;
+    feature_flags_loaded = true;
     return 0;
 }
 
 static int Read_Feature_Flag(uint32_t flag, bool* value)
 {
-    if (HAL_IsISR()) {
-        return -1; // DCT cannot be accessed from an ISR
-    }
     uint32_t flags = 0;
-    const int result = dct_read_app_data_copy(DCT_FEATURE_FLAGS_OFFSET, &flags, sizeof(flags));
-    if (result != 0) {
-        return result;
+    if (!feature_flags_loaded) {
+        if (HAL_IsISR()) {
+            return -1; // DCT cannot be accessed from an ISR
+        }
+        const int result = dct_read_app_data_copy(DCT_FEATURE_FLAGS_OFFSET, &flags, sizeof(flags));
+        if (result != 0) {
+            return result;
+        }
+        feature_flags = flags;
+        feature_flags_loaded = true;
+    } else {
+        flags = feature_flags;
     }
     *value = flags & flag;
     return 0;
@@ -359,10 +370,6 @@ void HAL_Core_Config(void)
 
     HAL_RNG_Configuration();
 
-    // Initialize system-part2 stdlib PRNG with a seed from hardware PRNG
-    // in case some system code happens to use rand()
-    srand(HAL_RNG_GetRandomNumber());
-
 #ifdef DFU_BUILD_ENABLE
     Load_SystemFlags();
 #endif
@@ -405,9 +412,11 @@ void HAL_Core_Setup(void) {
     if (bootloader_update_if_needed()) {
         HAL_Core_System_Reset();
     }
-    HAL_Bootloader_Lock(true);
 
     HAL_save_device_id(DCT_DEVICE_ID_OFFSET);
+
+    // Initialize stdlib PRNG with a seed from hardware RNG
+    srand(HAL_RNG_GetRandomNumber());
 
 #if !defined(MODULAR_FIRMWARE) || !MODULAR_FIRMWARE
     module_user_init_hook();
@@ -602,7 +611,7 @@ void HAL_Core_Enter_Safe_Mode(void* reserved)
     HAL_Core_System_Reset_Ex(RESET_REASON_SAFE_MODE, 0, NULL);
 }
 
-int32_t HAL_Core_Enter_Stop_Mode_Ext(const uint16_t* pins, size_t pins_count, const InterruptMode* mode, size_t mode_count, long seconds, void* reserved)
+int HAL_Core_Enter_Stop_Mode_Ext(const uint16_t* pins, size_t pins_count, const InterruptMode* mode, size_t mode_count, long seconds, void* reserved)
 {
     // Initial sanity check
     if ((pins_count == 0 || mode_count == 0 || pins == NULL || mode == NULL) && seconds <= 0) {
@@ -711,7 +720,7 @@ int32_t HAL_Core_Enter_Stop_Mode_Ext(const uint16_t* pins, size_t pins_count, co
     int32_t reason = SYSTEM_ERROR_UNKNOWN;
 
     if (exit_conditions & STOP_MODE_EXIT_CONDITION_PIN) {
-        STM32_Pin_Info* PIN_MAP = HAL_Pin_Map();
+        Hal_Pin_Info* PIN_MAP = HAL_Pin_Map();
         for (unsigned i = 0; i < pins_count; i++) {
             pin_t wakeUpPin = pins[i];
             if (EXTI_GetITStatus(PIN_MAP[wakeUpPin].gpio_pin) != RESET) {
@@ -782,7 +791,7 @@ void HAL_Core_Execute_Stop_Mode(void)
     while(RCC_GetSYSCLKSource() != 0x08);
 }
 
-void HAL_Core_Enter_Standby_Mode(uint32_t seconds, uint32_t flags)
+int HAL_Core_Enter_Standby_Mode(uint32_t seconds, uint32_t flags)
 {
     // Configure RTC wake-up
     if (seconds > 0) {
@@ -790,10 +799,10 @@ void HAL_Core_Enter_Standby_Mode(uint32_t seconds, uint32_t flags)
         HAL_RTC_Set_UnixAlarm((time_t) seconds);
     }
 
-    HAL_Core_Execute_Standby_Mode_Ext(flags, NULL);
+    return HAL_Core_Execute_Standby_Mode_Ext(flags, NULL);
 }
 
-void HAL_Core_Execute_Standby_Mode_Ext(uint32_t flags, void* reserved)
+int HAL_Core_Execute_Standby_Mode_Ext(uint32_t flags, void* reserved)
 {
     if ((flags & HAL_STANDBY_MODE_FLAG_DISABLE_WKP_PIN) == 0) {
     /* Enable WKUP pin */
@@ -808,6 +817,8 @@ void HAL_Core_Execute_Standby_Mode_Ext(uint32_t flags, void* reserved)
 
     /* Following code will not be reached */
     while(1);
+
+    return 0;
 }
 
 void HAL_Core_Execute_Standby_Mode(void)
@@ -1536,7 +1547,7 @@ static inline uint32_t Tim_Peripheral_To_Af(TIM_TypeDef* tim) {
 
 void HAL_Core_Button_Mirror_Pin(uint16_t pin, InterruptMode mode, uint8_t bootloader, uint8_t button, void *reserved) {
     (void)button; // unused
-    STM32_Pin_Info* pinmap = HAL_Pin_Map();
+    Hal_Pin_Info* pinmap = HAL_Pin_Map();
     if (pin > TOTAL_PINS)
         return;
 
@@ -1633,7 +1644,7 @@ void HAL_Core_Led_Mirror_Pin(uint8_t led, pin_t pin, uint32_t flags, uint8_t boo
     if (pin > TOTAL_PINS)
         return;
 
-    STM32_Pin_Info* pinmap = HAL_Pin_Map();
+    Hal_Pin_Info* pinmap = HAL_Pin_Map();
 
     if (!pinmap[pin].timer_peripheral)
         return;
@@ -1683,6 +1694,12 @@ void HAL_Core_Led_Mirror_Pin(uint8_t led, pin_t pin, uint32_t flags, uint8_t boo
     };
 
     LED_Mirror_Persist(led, &bootloader_conf);
+}
+
+int HAL_Core_Enter_Panic_Mode(void* reserved)
+{
+    __disable_irq();
+    return 0;
 }
 
 #if HAL_PLATFORM_CLOUD_UDP

@@ -1,7 +1,7 @@
 
 #include "application.h"
 #include "unit-test/unit-test.h"
-
+#include "random.h"
 
 #if PLATFORM_ID >= 3
 test(SYSTEM_01_freeMemory)
@@ -25,15 +25,24 @@ test(SYSTEM_01_freeMemory)
 test(SYSTEM_02_version)
 {
     uint32_t versionNumber = System.versionNumber();
-    // Serial.println(System.versionNumber()); // 328193 -> 0x00050201
-    // Serial.println(System.version().c_str()); // 0.5.2-rc.1
+    // Serial.println(System.versionNumber()); // 16908417 -> 0x01020081
+    // Serial.println(System.version().c_str()); // 1.2.0-rc.1
     char expected[20];
-    if (SYSTEM_VERSION & 0xFF)
-        sprintf(expected, "%d.%d.%d-rc.%d", (int)BYTE_N(versionNumber,3), (int)BYTE_N(versionNumber,2), (int)BYTE_N(versionNumber,1), (int)BYTE_N(versionNumber,0));
-    else
+    // Order of testing here is important to retain
+    if ((SYSTEM_VERSION & 0xFF) == 0xFF) {
         sprintf(expected, "%d.%d.%d", (int)BYTE_N(versionNumber,3), (int)BYTE_N(versionNumber,2), (int)BYTE_N(versionNumber,1));
+    } else if ((SYSTEM_VERSION & 0xC0) == 0x00) {
+        sprintf(expected, "%d.%d.%d-alpha.%d", (int)BYTE_N(versionNumber,3), (int)BYTE_N(versionNumber,2), (int)BYTE_N(versionNumber,1), (int)BYTE_N(versionNumber,0) & 0x3F);
+    } else if ((SYSTEM_VERSION & 0xC0) == 0x40) {
+        sprintf(expected, "%d.%d.%d-beta.%d", (int)BYTE_N(versionNumber,3), (int)BYTE_N(versionNumber,2), (int)BYTE_N(versionNumber,1), (int)BYTE_N(versionNumber,0) & 0x3F);
+    } else if ((SYSTEM_VERSION & 0xC0) == 0x80) {
+        sprintf(expected, "%d.%d.%d-rc.%d", (int)BYTE_N(versionNumber,3), (int)BYTE_N(versionNumber,2), (int)BYTE_N(versionNumber,1), (int)BYTE_N(versionNumber,0) & 0x3F);
+    } else if ((SYSTEM_VERSION & 0xC0) >= 0xC0) {
+        Serial.println("expected \"alpha\", \"beta\", \"rc\", or \"default\" version!");
+        fail();
+    }
 
-    assertTrue(strcmp(expected,System.version().c_str())==0);
+    assertEqual( expected, System.version().c_str());
 }
 
 // todo - use platform feature flags
@@ -77,6 +86,8 @@ test(SYSTEM_03_user_backup_ram)
 
 #endif // defined(USER_BACKUP_RAM)
 
+#if !HAL_PLATFORM_NRF52840 // TODO
+
 #if defined(BUTTON1_MIRROR_SUPPORTED)
 static int s_button_clicks = 0;
 static void onButtonClick(system_event_t ev, int data) {
@@ -85,13 +96,6 @@ static void onButtonClick(system_event_t ev, int data) {
 
 test(SYSTEM_04_button_mirror)
 {
-    // Known bug:
-    // events posted from an ISR might not be delivered to the application queue
-    // when threading is enabled
-    if (system_thread_get_state(nullptr) == spark::feature::ENABLED) {
-        skip();
-        return;
-    }
     System.buttonMirror(D1, FALLING, false);
     auto pinmap = HAL_Pin_Map();
     System.on(button_click, onButtonClick);
@@ -130,13 +134,16 @@ test(SYSTEM_05_button_mirror_disable)
 }
 #endif // defined(BUTTON1_MIRROR_SUPPORTED)
 
+#endif // !HAL_PLATFORM_NRF52840
+
 #if PLATFORM_ID!=0
 // platform supports out of memory notifiation
 
 bool oomEventReceived = false;
 size_t oomSizeReceived = 0;
 void handle_oom(system_event_t event, int param, void*) {
-	Serial.printlnf("got event %d %d", event, param);
+	// Serial is not thread-safe
+	// Serial.printlnf("got event %d %d", event, param);
 	if (out_of_memory==event) {
 		oomEventReceived = true;
 		oomSizeReceived = param;
@@ -153,9 +160,12 @@ void unregister_oom() {
 	System.off(out_of_memory, handle_oom);
 }
 
-
 test(SYSTEM_06_out_of_memory)
 {
+	// Disconnect from the cloud and network just in case
+	Particle.disconnect();
+	Network.disconnect();
+
 	const size_t size = 1024*1024*1024;
 	register_oom();
 	malloc(size);
@@ -167,17 +177,25 @@ test(SYSTEM_06_out_of_memory)
 }
 
 test(SYSTEM_07_fragmented_heap) {
-	struct block {
-		char data[20];
-		block* next;
+	struct Block {
+		Block() {
+			// Write garbage data to more easily corrupt the RAM
+			// in case of issues like static RAM / heap overlap or
+			// just simple heap corruption
+			Random rng;
+			rng.gen(data, sizeof(data));
+			next = nullptr;
+		}
+		char data[508];
+		Block* next;
 	};
 	register_oom();
 
-	block* next = nullptr;
+	Block* next = nullptr;
 
 	// exhaust memory
 	for (;;) {
-		block* b = new block();
+		Block* b = new Block();
 		if (!b) {
 			break;
 		} else {
@@ -187,21 +205,21 @@ test(SYSTEM_07_fragmented_heap) {
 	}
 
 	assertTrue(oomEventReceived);
-	assertEqual(oomSizeReceived, sizeof(block));
+	assertEqual(oomSizeReceived, sizeof(Block));
 
 	runtime_info_t info;
 	info.size = sizeof(info);
 	HAL_Core_Runtime_Info(&info, nullptr);
 
 	// we can't really say about the free heap but the block size should be less
-	assertLessOrEqual(info.largest_free_block_heap, sizeof(block));
+	assertLessOrEqual(info.largest_free_block_heap, sizeof(Block));
 	size_t low_heap = info.freeheap;
 
 	// free every 2nd block
-	block* head = next;
+	Block* head = next;
 	int count = 0;
 	for (;head;) {
-		block* free = head->next;
+		Block* free = head->next;
 		if (free) {
 			// skip the next block
 			head->next = free->next;
@@ -219,22 +237,23 @@ test(SYSTEM_07_fragmented_heap) {
 
 	unregister_oom();
 	register_oom();
-	block* b = new block[2];  // no room for 2 blocks
-	delete b;
+	const size_t BLOCKS_TO_MALLOC = 3;
+	Block* b = new Block[BLOCKS_TO_MALLOC];  // no room for 3 blocks, memory is clearly fragmented
+	delete[] b;
 
 	// free the remaining blocks
 	for (;next;) {
-		block* b = next;
+		Block* b = next;
 		next = b->next;
 		delete b;
 	}
 
-	assertMoreOrEqual(half_fragment_block_size, sizeof(block));
-	assertLessOrEqual(half_fragment_block_size, 2*sizeof(block)+8 /* 8 byte overhead */);
-	assertMoreOrEqual(half_fragment_free, low_heap+(sizeof(block)*count));
+	assertMoreOrEqual(half_fragment_block_size, sizeof(Block)); // there should definitely be one block available
+	assertLessOrEqual(half_fragment_block_size, BLOCKS_TO_MALLOC*sizeof(Block)-1); // we expect malloc of 3 blocks to fail, so this better allow up to that size less 1
+	assertMoreOrEqual(half_fragment_free, low_heap+(sizeof(Block)*count));
 
 	assertTrue(oomEventReceived);
-	assertMoreOrEqual(oomSizeReceived, sizeof(block)*2);
+	assertMoreOrEqual(oomSizeReceived, sizeof(Block)*BLOCKS_TO_MALLOC);
 }
 
 test(SYSTEM_08_out_of_memory_not_raised_for_0_size_malloc)
@@ -248,6 +267,12 @@ test(SYSTEM_08_out_of_memory_not_raised_for_0_size_malloc)
 	assertFalse(oomEventReceived);
 }
 
+test(SYSTEM_09_out_of_memory_restore_state)
+{
+	// Restore connection to the cloud and network
+	Network.connect();
+	Particle.connect();
+	waitFor(Particle.connected, 6*60*1000);
+}
 
-
-#endif
+#endif // PLATFORM_ID!=0

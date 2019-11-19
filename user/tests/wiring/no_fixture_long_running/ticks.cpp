@@ -45,6 +45,7 @@ void assert_micros_millis(int duration, bool overflow = false)
 
 void assert_micros_millis_interrupts(int duration)
 {
+    // TODO: nRF52 platforms
 #if PLATFORM_ID==0 || (PLATFORM_ID>=6 && PLATFORM_ID<=10)
     // Enable some high priority interrupt to run interference
     pinMode(D0, OUTPUT);
@@ -127,7 +128,8 @@ test(TICKS_00_millis_micros_baseline_test)
     assertMoreOrEqual(micros() - startMicros, DELAY);
 }
 
-#if !defined(MODULAR_FIRMWARE) || !MODULAR_FIRMWARE
+// TODO: nRF52 platforms
+#if (!defined(MODULAR_FIRMWARE) || !MODULAR_FIRMWARE) && !defined(HAL_PLATFORM_NRF52840)
 // the __advance_system1MsTick isn't dynamically linked so we build this as a monolithic app
 #include "hw_ticks.h"
 test(TICKS_01_millis_and_micros_rollover)
@@ -143,7 +145,7 @@ test(TICKS_01_millis_and_micros_rollover)
 
 test(TICKS_02_millis_and_micros_along_with_high_priority_interrupts)
 {
-    #define TWO_MINUTES 2*60*1000
+    static const system_tick_t TWO_MINUTES = 2 * 60 * 1000;
     system_tick_t start = millis();
     assert_micros_millis_interrupts(TWO_MINUTES);
     assertMoreOrEqual(millis()-start,TWO_MINUTES);
@@ -151,7 +153,7 @@ test(TICKS_02_millis_and_micros_along_with_high_priority_interrupts)
 
 test(TICKS_03_millis_and_micros_monotonically_increases)
 {
-    #define TWO_MINUTES 2*60*1000
+    static const system_tick_t TWO_MINUTES = 2 * 60 * 1000;
     system_tick_t start = millis();
     assert_micros_millis(TWO_MINUTES);
     assertMoreOrEqual(millis()-start,TWO_MINUTES);

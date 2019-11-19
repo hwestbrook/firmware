@@ -53,6 +53,7 @@ nbproject/
 build/target/
 build/cores/
 hal/soft-ap/.idea/
+
 /binaries
 
 # User Applications
@@ -64,3 +65,14 @@ hal/soft-ap/.idea/
 /user/applications/firmware_flow-meter
 /user/applications/firmware_emissions-testing
 /user/applications/firmware_bin-dicator
+
+cmake-build-debug
+.vscode
+
+# Doxygen documentation
+docs/doxygen/html/
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake

@@ -28,6 +28,8 @@
 
 #include "spark_wiring_platform.h"
 
+#include <chrono>
+
 #if Wiring_WiFi
 
 #include "spark_wiring_network.h"
@@ -75,11 +77,8 @@ class WiFiClass : public NetworkClass
     }
 
 public:
-    WiFiClass() {}
-    ~WiFiClass() {}
-
-    operator network_handle_t() {
-        return 0;
+    WiFiClass() :
+            NetworkClass(NETWORK_INTERFACE_WIFI_STA) {
     }
 
     WLanConfig* wifi_config() {
@@ -165,6 +164,7 @@ public:
     void setListenTimeout(uint16_t timeout) {
         network_set_listen_timeout(*this, timeout, NULL);
     }
+    inline void setListenTimeout(std::chrono::seconds s) { setListenTimeout(s.count()); }
 
     uint16_t getListenTimeout(void) {
         return network_get_listen_timeout(*this, 0, NULL);
@@ -229,12 +229,14 @@ public:
         return wlan_get_antenna(nullptr);
     }
 
+#if !HAL_USE_INET_HAL_POSIX
     IPAddress resolve(const char* name)
     {
-        HAL_IPAddress ip = {0};
+        HAL_IPAddress ip = {};
         return (inet_gethostbyname(name, strlen(name), &ip, *this, NULL) != 0) ?
                 IPAddress(uint32_t(0)) : IPAddress(ip);
     }
+#endif // !HAL_USE_INET_HAL_POSIX
 
     void setStaticIP(const IPAddress& host, const IPAddress& netmask,
         const IPAddress& gateway, const IPAddress& dns)

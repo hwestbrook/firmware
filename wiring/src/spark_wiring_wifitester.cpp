@@ -63,6 +63,8 @@ int32_t digitalRead(pin_t pin) {
 #define NETWORK WiFi
 #elif Wiring_Cellular
 #define NETWORK Cellular
+#elif Wiring_Mesh
+#define NETWORK Mesh
 #endif
 
 #ifdef NETWORK
@@ -203,7 +205,8 @@ void WiFiTester::printInfo() {
 
     // GET ICCID and IMEI (Modem with power on required)
     if (isPowerOn()) {
-        CellularDevice dev;
+        CellularDevice dev = {};
+        dev.size = sizeof(dev);
         cellular_device_info(&dev, NULL);
         printItem("ICCID", dev.iccid);
         printItem("IMEI", dev.imei);
@@ -309,14 +312,14 @@ void WiFiTester::checkWifiSerial(char c) {
         } else if ((start = strstr(command, cmd_DFU))) {
             serialPrintln("DFU mode! DFU mode! DFU mode! DFU mode! DFU mode! DFU mode!");
             serialPrintln("DFU mode! DFU mode! DFU mode! DFU mode! DFU mode! DFU mode!");
-            delay(200);
+            HAL_Delay_Milliseconds(200);
 
             System.dfu();
         } else if ((start = strstr(command, cmd_RESET))) {
             //to trigger a factory reset:
             serialPrintln("factory reset! factory reset! factory reset! factory reset!");
             serialPrintln("factory reset! factory reset! factory reset! factory reset!");
-            delay(200);
+            HAL_Delay_Milliseconds(200);
 
             System.factoryReset();
         } else if ((start = strstr(command, cmd_UNLOCK))) {
@@ -343,14 +346,14 @@ void WiFiTester::checkWifiSerial(char c) {
             serialPrintln("Rebooting... Rebooting... Rebooting...");
             serialPrintln("Rebooting... Rebooting... Rebooting...");
 
-            delay(200);
+            HAL_Delay_Milliseconds(200);
             System.reset();
         } else if ((start = strstr(command, cmd_POWER_ON))) {
             serialPrintln("Power on... Power on... Power on...");
             serialPrintln("Power on... Power on... Power on...");
 
 #if Wiring_Cellular
-            delay(200);
+            HAL_Delay_Milliseconds(200);
             cellular_result_t result = cellular_on(NULL);
             if (result == 0) {
                 power_state = true;
@@ -364,7 +367,7 @@ void WiFiTester::checkWifiSerial(char c) {
             } else {
                 serialPrintln("POWER FAILED TO TURN ON!!!");
             }
-            delay(200);
+            HAL_Delay_Milliseconds(200);
         } else if ((start = strstr(command, cmd_INFO))) {
             printInfo();
         }
@@ -396,8 +399,13 @@ void WiFiTester::checkWifiSerial(char c) {
             }
             if (ok) {
                 if (!strcmp("ALL", parts[1])) {
+#if HAL_PLATFORM_NRF52840
+                    setPinOutputRange(A0, A5, pinValue);
+                    setPinOutputRange(D0, D8, pinValue);
+#else
                     setPinOutputRange(A0, A7, pinValue);
                     setPinOutputRange(D0, D7, pinValue);
+#endif
                 }
                 else if (parts[1][0]=='D' && is_digit(parts[1][1]) && !parts[1][2]) {
                     setPinOutput(D0 + (parts[1][1]-'0'), pinValue);

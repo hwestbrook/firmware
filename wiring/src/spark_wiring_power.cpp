@@ -48,6 +48,32 @@ The I2C address of BQ24195 is 0x6B
 
 
 #include "spark_wiring_power.h"
+
+#if HAL_PLATFORM_PMIC_BQ24195
+
+namespace {
+
+TwoWire* pmicWireInstance() {
+    switch (HAL_PLATFORM_PMIC_BQ24195_I2C) {
+        case HAL_I2C_INTERFACE1:
+        default: {
+            return &Wire;
+        }
+#if Wiring_Wire1
+        case HAL_I2C_INTERFACE2: {
+            return &Wire1;
+        }
+#endif // Wiring_Wire1
+#if Wiring_Wire3
+        case HAL_I2C_INTERFACE3: {
+            return &Wire3;
+        }
+#endif // Wiring_Wire3
+    }
+}
+
+} // anonymous
+
 #include <mutex>
 
 PMIC::PMIC(bool _lock) :
@@ -73,10 +99,10 @@ PMIC::~PMIC()
  *******************************************************************************/
 bool PMIC::begin()
 {
-#if Wiring_Wire3
-    Wire3.begin();
-#endif
-    return 1;
+    if (!pmicWireInstance()->isEnabled()) {
+        pmicWireInstance()->begin();
+    }
+    return pmicWireInstance()->isEnabled();
 }
 
 /*
@@ -285,7 +311,7 @@ uint16_t PMIC::getInputCurrentLimit(void) {
         3000
     };
     byte raw = readInputSourceRegister();
-    raw &= 0x03;
+    raw &= 0x07;
     return mapping[raw];
 }
 
@@ -1001,14 +1027,12 @@ byte PMIC::getVersion() {
 byte PMIC::readRegister(byte startAddress) {
     std::lock_guard<PMIC> l(*this);
     byte DATA = 0;
-#if Wiring_Wire3
-    Wire3.beginTransmission(PMIC_ADDRESS);
-    Wire3.write(startAddress);
-    Wire3.endTransmission(true);
+    pmicWireInstance()->beginTransmission(PMIC_ADDRESS);
+    pmicWireInstance()->write(startAddress);
+    pmicWireInstance()->endTransmission(true);
 
-    Wire3.requestFrom(PMIC_ADDRESS, 1, true);
-    DATA = Wire3.read();
-#endif
+    pmicWireInstance()->requestFrom(PMIC_ADDRESS, 1, true);
+    DATA = pmicWireInstance()->read();
     return DATA;
 }
 
@@ -1021,24 +1045,18 @@ byte PMIC::readRegister(byte startAddress) {
  *******************************************************************************/
 void PMIC::writeRegister(byte address, byte DATA) {
     std::lock_guard<PMIC> l(*this);
-#if Wiring_Wire3
-    Wire3.beginTransmission(PMIC_ADDRESS);
-    Wire3.write(address);
-    Wire3.write(DATA);
-    Wire3.endTransmission(true);
-#endif
+    pmicWireInstance()->beginTransmission(PMIC_ADDRESS);
+    pmicWireInstance()->write(address);
+    pmicWireInstance()->write(DATA);
+    pmicWireInstance()->endTransmission(true);
 }
 
 bool PMIC::lock() {
-#if Wiring_Wire3
-    return Wire3.lock();
-#endif
-    return false;
+    return pmicWireInstance()->lock();
 }
 
 bool PMIC::unlock() {
-#if Wiring_Wire3
-    return Wire3.unlock();
-#endif
-    return false;
+    return pmicWireInstance()->unlock();
 }
+
+#endif /* HAL_PLATFORM_PMIC_BQ24195 */

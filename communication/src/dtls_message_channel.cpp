@@ -48,19 +48,13 @@ uint32_t compute_checksum(uint32_t(*calculate_crc)(const uint8_t* data, uint32_t
 }
 
 
-
-void SessionPersist::save(save_fn_t saver)
-{
-	save_this_with(saver);
-}
-
 void SessionPersist::prepare_save(const uint8_t* random, uint32_t keys_checksum, mbedtls_ssl_context* context, message_id_t next_id)
 {
 	if (context->state == MBEDTLS_SSL_HANDSHAKE_OVER)
 	{
 		this->keys_checksum = keys_checksum;
 		in_epoch = context->in_epoch;
-		memcpy(out_ctr, context->out_ctr, 8);
+		memcpy(out_ctr, context->cur_out_ctr, 8);
 		memcpy(randbytes, random, sizeof(randbytes));
 		this->next_coap_id = next_id;
 		save_session(context->session);
@@ -76,16 +70,15 @@ void SessionPersist::update(mbedtls_ssl_context* context, save_fn_t saver, messa
 {
 	if (context->state == MBEDTLS_SSL_HANDSHAKE_OVER)
 	{
-		memcpy(out_ctr, context->out_ctr, 8);
+		memcpy(out_ctr, context->cur_out_ctr, 8);
 		this->next_coap_id = next_id;
 		save_this_with(saver);
 	}
 }
 
-auto SessionPersist::restore(mbedtls_ssl_context* context, bool renegotiate, uint32_t keys_checksum, message_id_t* next_id, restore_fn_t restorer) -> RestoreStatus
+auto SessionPersist::restore(mbedtls_ssl_context* context, bool renegotiate, uint32_t keys_checksum, message_id_t* next_id, restore_fn_t restorer, save_fn_t saver) -> RestoreStatus
 {
 	if (!restore_this_from(restorer)) {
-
 		return NO_SESSION;
 	}
 
@@ -94,9 +87,21 @@ auto SessionPersist::restore(mbedtls_ssl_context* context, bool renegotiate, uin
 		return NO_SESSION;
 	}
 
+    LOG(WARN, "session has %d uses", use_count());
+	if (has_expired()) {
+	    invalidate();
+	    save(saver);
+	    LOG(WARN, "session has expired after %d uses", use_count());
+	    return NO_SESSION;
+	}
+
+    increment_use_count();
+    save(saver);
+
 	// assume invalid initially. With the ssl context being reset,
 	// we cannot return NO_SESSION from this point onwards.
 	size = 0;
+
 	mbedtls_ssl_session_reset(context);
 
 	context->handshake->resume = 1;
@@ -111,9 +116,8 @@ auto SessionPersist::restore(mbedtls_ssl_context* context, bool renegotiate, uin
 	if (!renegotiate) {
 		context->state = MBEDTLS_SSL_HANDSHAKE_WRAPUP;
 		context->in_epoch = in_epoch;
-		memcpy(context->out_ctr, &out_ctr, sizeof(out_ctr));
+		memcpy(context->cur_out_ctr, &out_ctr, sizeof(out_ctr));
 		memcpy(context->handshake->randbytes, randbytes, sizeof(randbytes));
-
 		context->transform_negotiate->ciphersuite_info = mbedtls_ssl_ciphersuite_from_id(ciphersuite);
 		if (!context->transform_negotiate->ciphersuite_info)
 		{
@@ -197,7 +201,7 @@ ProtocolError DTLSMessageChannel::init(
 			MBEDTLS_SSL_TRANSPORT_DATAGRAM, MBEDTLS_SSL_PRESET_DEFAULT);
 	EXIT_ERROR(ret, "unable to configure defaults");
 
-	mbedtls_ssl_conf_handshake_timeout(&conf, 3000, 6000);
+	mbedtls_ssl_conf_handshake_timeout(&conf, 3000, 24000);
 
 	mbedtls_ssl_conf_rng(&conf, mbedtls_default_rng, nullptr); // todo - would like to make this a callback
 	mbedtls_ssl_conf_dbg(&conf, my_debug, nullptr);
@@ -225,15 +229,20 @@ ProtocolError DTLSMessageChannel::init(
 	return NO_ERROR;
 }
 
+/*
+ * Inspects the move session flag to amend the application data record to a move session record.
+ * See: https://github.com/particle-iot/knowledge/blob/8df146d88c4237e90553f3fd6d8465ab58ec79e0/services/dtls-ip-change.md
+ */
 inline int DTLSMessageChannel::send(const uint8_t* data, size_t len)
 {
 	if (move_session && len && data[0]==23)
 	{
+		// buffer for a new packet that contains the device ID length and a byte for the length appended to the existing data.
 		uint8_t d[len+DEVICE_ID_LEN+1];
-		memcpy(d, data, len);
-		d[0] = 254;
-		memcpy(d+len, device_id, DEVICE_ID_LEN);
-		d[len+DEVICE_ID_LEN] = DEVICE_ID_LEN;
+		memcpy(d, data, len);						// original application data
+		d[0] = 254;									// move session record type
+		memcpy(d+len, device_id, DEVICE_ID_LEN);	// set the device ID
+		d[len+DEVICE_ID_LEN] = DEVICE_ID_LEN;			// set the device ID length as the last byte in the packet
 		int result = callbacks.send(d, len+DEVICE_ID_LEN+1, callbacks.tx_context);
 		// hide the increased length from DTLS
 		if (result==int(len+DEVICE_ID_LEN+1))
@@ -288,7 +297,14 @@ void DTLSMessageChannel::init()
 	mbedtls_ssl_config_init (&conf);
 	mbedtls_x509_crt_init (&clicert);
 	mbedtls_pk_init (&pkey);
+
+#if defined(MBEDTLS_DEBUG_C)
+#ifndef MBEDTLS_DEBUG_COMPILE_TIME_LEVEL
 	mbedtls_debug_set_threshold(1);
+#else
+	mbedtls_debug_set_threshold(MBEDTLS_DEBUG_COMPILE_TIME_LEVEL);
+#endif // MBEDTLS_DEBUG_COMPILE_TIME_LEVEL
+#endif // MBEDTLS_DEBUG_C
 }
 
 void DTLSMessageChannel::dispose()
@@ -339,7 +355,7 @@ ProtocolError DTLSMessageChannel::establish(uint32_t& flags, uint32_t app_state_
 	}
 	bool renegotiate = false;
 
-	SessionPersist::RestoreStatus restoreStatus = sessionPersist.restore(&ssl_context, renegotiate, keys_checksum, coap_state, callbacks.restore);
+	SessionPersist::RestoreStatus restoreStatus = sessionPersist.restore(&ssl_context, renegotiate, keys_checksum, coap_state, callbacks.restore, callbacks.save);
 	LOG(INFO,"(CMPL,RENEG,NO_SESS,ERR) restoreStatus=%d", restoreStatus);
 	if (restoreStatus==SessionPersist::COMPLETE)
 	{
@@ -455,6 +471,20 @@ ProtocolError DTLSMessageChannel::receive(Message& message)
 	return NO_ERROR;
 }
 
+/**
+ * Once data has been successfully received we can stop
+ * sending move-session messages.
+ * This is also used to reset the expiration counter.
+ */
+void DTLSMessageChannel::cancel_move_session()
+{
+    if (move_session) {
+        move_session = false;
+        sessionPersist.clear_use_count();
+        command(SAVE_SESSION);
+    }
+}
+
 ProtocolError DTLSMessageChannel::send(Message& message)
 {
   if (ssl_context.state != MBEDTLS_SSL_HANDSHAKE_OVER)
@@ -482,6 +512,7 @@ ProtocolError DTLSMessageChannel::send(Message& message)
   int ret = mbedtls_ssl_write(&ssl_context, message.buf(), message.length());
   if (ret < 0 && ret != MBEDTLS_ERR_SSL_WANT_WRITE)
   {
+	  LOG(WARN, "mbedtls_ssl_write returned %x", ret);
 	  reset_session();
 	  return IO_ERROR_GENERIC_MBEDTLS_SSL_WRITE;
   }

@@ -69,7 +69,7 @@ ifdef START_YMODEM_FLASHER_SERIAL_SPEED
 CFLAGS += -DSTART_YMODEM_FLASHER_SERIAL_SPEED=$(START_YMODEM_FLASHER_SERIAL_SPEED)
 endif
 
-CONLYFLAGS += -Wno-pointer-sign -std=gnu99
+CONLYFLAGS += -Wno-pointer-sign
 
 LDFLAGS += $(LIBS_EXT)
 LDFLAGS += $(patsubst %,-L%,$(LIB_DIRS))
@@ -97,6 +97,8 @@ LDFLAGS += -Wl,--whole-archive $(patsubst %,-l%,$(LIBS)) -Wl,--no-whole-archive
 else
 LDFLAGS += $(patsubst %,-l%,$(LIBS))
 endif
+
+LDFLAGS += $(LIBS_EXT_END)
 
 # Assembler flags
 ASFLAGS += -x assembler-with-cpp -fmessage-length=0

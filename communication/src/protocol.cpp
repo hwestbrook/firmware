@@ -47,16 +47,32 @@ ProtocolError Protocol::handle_received_message(Message& message,
 	pinger.message_received();
 	uint8_t* queue = message.buf();
 	message_type = Messages::decodeType(queue, message.length());
+	// todo - not all requests/responses have tokens. These device requests do not use tokens:
+	// Update Done, ChunkMissed, event, ping, hello
 	token_t token = queue[4];
 	message_id_t msg_id = CoAP::message_id(queue);
+	CoAPCode::Enum code = CoAP::code(queue);
+	CoAPType::Enum type = CoAP::type(queue);
+	if (CoAPType::is_reply(type)) {
+		LOG(TRACE, "Reply recieved: type=%d, code=%d", type, code);
+		// todo - this is a little too simple in the case of an empty ACK for a separate response
+		// the message should then be bound to the token. see CH19037
+		if (type==CoAPType::RESET) {		// RST is sent with an empty code. It's like an unspecified error
+			LOG(TRACE, "Reset received, setting error code to internal server error.");
+			code = CoAPCode::INTERNAL_SERVER_ERROR;
+		}
+		notify_message_complete(msg_id, code);
+	}
+
 	ProtocolError error = NO_ERROR;
 	//LOG(WARN,"message type %d", message_type);
+	// todo - would be good to separate requests from responses here.
 	switch (message_type)
 	{
 	case CoAPMessageType::DESCRIBE:
 	{
-		// 4 bytes header, 1 byte token, 2 bytes location path
-		// 2 bytes optional single character location path for describe flags
+		// 4 bytes header, 1 byte token, 2 bytes Uri-Path
+		// 2 bytes optional single character Uri-Query for describe flags
 		int descriptor_type = DESCRIBE_DEFAULT;
 		if (message.length()>8 && queue[8] <= DESCRIBE_MAX) {
 			descriptor_type = queue[8];
@@ -73,7 +89,7 @@ ProtocolError Protocol::handle_received_message(Message& message,
 
 	case CoAPMessageType::VARIABLE_REQUEST:
 	{
-		char variable_key[13];
+		char variable_key[MAX_VARIABLE_KEY_LENGTH+1];
 		variables.decode_variable_request(variable_key, message);
 		return variables.handle_variable_request(variable_key, message,
 				channel, token, msg_id,
@@ -126,10 +142,6 @@ ProtocolError Protocol::handle_received_message(Message& message,
 		error = channel.send(message);
 		break;
 
-	case CoAPMessageType::EMPTY_ACK:
-		ack_handlers.setResult(msg_id);
-		break;
-
 	case CoAPMessageType::ERROR:
 	default:
 		; // drop it on the floor
@@ -137,6 +149,26 @@ ProtocolError Protocol::handle_received_message(Message& message,
 
 	// all's well
 	return error;
+}
+
+void Protocol::notify_message_complete(message_id_t msg_id, CoAPCode::Enum responseCode) {
+	const auto codeClass = (int)responseCode >> 5;
+	const auto codeDetail = (int)responseCode & 0x1f;
+	LOG(INFO, "message id %d complete with code %d.%02d", msg_id, codeClass, codeDetail);
+	if (CoAPCode::is_success(responseCode)) {
+		ack_handlers.setResult(msg_id);
+	} else {
+		int error = SYSTEM_ERROR_COAP;
+		switch (codeClass) {
+		case 4:
+			error = SYSTEM_ERROR_COAP_4XX;
+			break;
+		case 5:
+			error = SYSTEM_ERROR_COAP_5XX;
+			break;
+		}
+		ack_handlers.setError(msg_id, error);
+	}
 }
 
 ProtocolError Protocol::handle_key_change(Message& message)
@@ -280,8 +312,12 @@ int Protocol::begin()
 	// hello not needed because it's already been sent and the server maintains device state
 	if (session_resumed && channel.is_unreliable() && (flags & SKIP_SESSION_RESUME_HELLO))
 	{
-		ping(true);
 		LOG(INFO,"resumed session - not sending HELLO message");
+		const auto r = ping(true);
+		if (r != NO_ERROR) {
+			error = r;
+		}
+		// Note: Make sure SESSION_RESUMED gets returned to the calling code
 		return error;
 	}
 
@@ -304,9 +340,12 @@ int Protocol::begin()
 	}
 	LOG(INFO,"Handshake completed");
 	channel.notify_established();
-	flags |= SKIP_SESSION_RESUME_HELLO;
 	return error;
 }
+
+const auto HELLO_FLAG_OTA_UPGRADE_SUCCESSFUL = 1;
+const auto HELLO_FLAG_DIAGNOSTICS_SUPPORT = 2;
+const auto HELLO_FLAG_IMMEDIATE_UPDATES_SUPPORT = 4;
 
 /**
  * Send the hello message over the channel.
@@ -317,8 +356,8 @@ ProtocolError Protocol::hello(bool was_ota_upgrade_successful)
 	Message message;
 	channel.create(message);
 
-	uint8_t flags = was_ota_upgrade_successful ? 1 : 0;
-	flags |= 2;		// diagnostics support
+	uint8_t flags = was_ota_upgrade_successful ? HELLO_FLAG_OTA_UPGRADE_SUCCESSFUL : 0;
+	flags |= HELLO_FLAG_DIAGNOSTICS_SUPPORT | HELLO_FLAG_IMMEDIATE_UPDATES_SUPPORT;
 	size_t len = build_hello(message, flags);
 	message.set_length(len);
 	message.set_confirm_received(true);
@@ -403,21 +442,8 @@ ProtocolError Protocol::event_loop(CoAPMessageType::Enum& message_type)
 	return error;
 }
 
-
-/**
- * Produces and transmits a describe message.
- * @param desc_flags Flags describing the information to provide. A combination of {@code DESCRIBE_APPLICATION) and {@code DESCRIBE_SYSTEM) flags.
- */
-ProtocolError Protocol::send_description(token_t token, message_id_t msg_id, int desc_flags)
+void Protocol::build_describe_message(Appender& appender, int desc_flags)
 {
-	Message message;
-	channel.create(message);
-	uint8_t* buf = message.buf();
-	message.set_id(msg_id);
-	size_t desc = Messages::description(buf, msg_id, token);
-
-	BufferAppender appender(buf + desc, message.capacity());
-
 	// diagnostics must be requested in isolation to be a binary packet
 	if (descriptor.append_metrics && (desc_flags == DESCRIBE_METRICS))
 	{
@@ -484,37 +510,96 @@ ProtocolError Protocol::send_description(token_t token, message_id_t msg_id, int
 		if (descriptor.append_system_info && (desc_flags & DESCRIBE_SYSTEM))
 		{
 			if (has_content)
+			{
 				appender.append(',');
+			}
 			has_content = true;
 			descriptor.append_system_info(append_instance, &appender, nullptr);
 		}
 		appender.append('}');
 	}
-	int msglen = appender.next() - (uint8_t*) buf;
-	message.set_length(msglen);
-	LOG(INFO,"Sending '%s%s%s' describe message", desc_flags & DESCRIBE_SYSTEM ? "S" : "",
-											  desc_flags & DESCRIBE_APPLICATION ? "A" : "",
-											  desc_flags & DESCRIBE_METRICS ? "M" : "");
-	ProtocolError error = channel.send(message);
-	if (error==NO_ERROR && descriptor.app_state_selector_info &&
-            (desc_flags & DESCRIBE_APPLICATION || desc_flags & DESCRIBE_SYSTEM))
-	{
-        this->channel.command(Channel::SAVE_SESSION);
-		if (desc_flags & DESCRIBE_APPLICATION)
-		{
-			// have sent the describe message to the cloud so update the crc
-			descriptor.app_state_selector_info(SparkAppStateSelector::DESCRIBE_APP, SparkAppStateUpdate::COMPUTE_AND_PERSIST, 0, nullptr);
-		}
-		if (desc_flags & DESCRIBE_SYSTEM)
-		{
-			// have sent the describe message to the cloud so update the crc
-			descriptor.app_state_selector_info(SparkAppStateSelector::DESCRIBE_SYSTEM, SparkAppStateUpdate::COMPUTE_AND_PERSIST, 0, nullptr);
-		}
-        this->channel.command(Channel::LOAD_SESSION);
-	}
-	return error;
 }
 
+ProtocolError Protocol::generate_and_send_description(MessageChannel& channel, Message& message,
+                                                      size_t header_size, int desc_flags)
+{
+    ProtocolError error;
+
+    BufferAppender appender((message.buf() + header_size), (message.capacity() - header_size));
+    build_describe_message(appender, desc_flags);
+
+    const size_t msglen = (appender.next() - (uint8_t*)message.buf());
+    message.set_length(msglen);
+    if (appender.overflowed())
+    {
+        LOG(ERROR, "Describe message overflowed by %d bytes", appender.overflowed());
+        // There is no point in continuing to run, the device will be constantly reconnecting
+        // to the cloud. It's better to clearly indicate that the describe message is never going
+        // to go through to the cloud by going into a panic state, otherwise one would have to
+        // sift through logs to find 'Describe message overflowed by %d bytes' message to understand
+        // what's going on.
+        SPARK_ASSERT(!appender.overflowed());
+    }
+
+    LOG(INFO, "Posting '%s%s%s' describe message", desc_flags & DESCRIBE_SYSTEM ? "S" : "",
+        desc_flags & DESCRIBE_APPLICATION ? "A" : "", desc_flags & DESCRIBE_METRICS ? "M" : "");
+
+    error = channel.send(message);
+
+    if (error == NO_ERROR && descriptor.app_state_selector_info &&
+        (desc_flags & DESCRIBE_APPLICATION || desc_flags & DESCRIBE_SYSTEM))
+    {
+        this->channel.command(Channel::SAVE_SESSION);
+        if (desc_flags & DESCRIBE_APPLICATION)
+        {
+            // have sent the describe message to the cloud so update the crc
+            descriptor.app_state_selector_info(SparkAppStateSelector::DESCRIBE_APP,
+                                               SparkAppStateUpdate::COMPUTE_AND_PERSIST, 0,
+                                               nullptr);
+        }
+        if (desc_flags & DESCRIBE_SYSTEM)
+        {
+            // have sent the describe message to the cloud so update the crc
+            descriptor.app_state_selector_info(SparkAppStateSelector::DESCRIBE_SYSTEM,
+                                               SparkAppStateUpdate::COMPUTE_AND_PERSIST, 0,
+                                               nullptr);
+        }
+        this->channel.command(Channel::LOAD_SESSION);
+    }
+	// Log error code
+    else if (NO_ERROR != error)
+    {
+        LOG(ERROR, "Channel failed to send message with error-code <%d>", error);
+    }
+
+    return error;
+}
+
+ProtocolError Protocol::post_description(int desc_flags)
+{
+    Message message;
+    channel.create(message);
+    const size_t header_size =
+        Messages::describe_post_header(message.buf(), message.capacity(), 0, (desc_flags & 0xFF));
+
+    return generate_and_send_description(channel, message, header_size, desc_flags);
+}
+
+/**
+ * Produces and transmits (PIGGYBACK) a describe message.
+ * @param desc_flags Flags describing the information to provide. A combination of {@code
+ * DESCRIBE_APPLICATION) and {@code DESCRIBE_SYSTEM) flags.
+ */
+ProtocolError Protocol::send_description(token_t token, message_id_t msg_id, int desc_flags)
+{
+    Message message;
+    channel.create(message);
+    uint8_t* buf = message.buf();
+    message.set_id(msg_id);
+    size_t desc = Messages::description(buf, msg_id, token);
+
+    return generate_and_send_description(channel, message, desc, desc_flags);
+}
 
 int Protocol::ChunkedTransferCallbacks::prepare_for_firmware_update(FileTransfer::Descriptor& data, uint32_t flags, void* reserved)
 {
@@ -541,5 +626,39 @@ system_tick_t Protocol::ChunkedTransferCallbacks::millis()
 	return callbacks->millis();
 }
 
+int Protocol::get_describe_data(spark_protocol_describe_data* data, void* reserved)
+{
+	data->maximum_size = 768;  // a conservative guess based on dtls and lightssl encryption overhead and the CoAP data
+	BufferAppender2 appender(nullptr,  0);	// don't need to store the data, just count the size
+	build_describe_message(appender, data->flags);
+	data->current_size = appender.dataSize();
+	return 0;
+}
+
+#if HAL_PLATFORM_MESH
+int completion_result(int result, completion_handler_data* completion) {
+	if (completion) {
+		completion->handler_callback(result, nullptr, completion->handler_data, nullptr);
+	}
+	return result;
+}
+
+int Protocol::mesh_command(MeshCommand::Enum cmd, uint32_t data, void* extraData, completion_handler_data* completion)
+{
+	LOG(INFO, "handling mesh command %d", cmd);
+	switch(cmd) {
+	case MeshCommand::NETWORK_CREATED:
+		return mesh.network_update(*this, next_token(), channel, true, *(MeshCommand::NetworkInfo*)extraData, completion);
+	case MeshCommand::NETWORK_UPDATED:
+		return mesh.network_update(*this, next_token(), channel, false, *(MeshCommand::NetworkInfo*)extraData, completion);
+	case MeshCommand::DEVICE_MEMBERSHIP:
+		return mesh.device_joined(*this, next_token(), channel, data, *(MeshCommand::NetworkUpdate*)extraData, completion);
+	case MeshCommand::DEVICE_BORDER_ROUTER:
+		return mesh.device_gateway(*this, next_token(), channel, data, *(MeshCommand::NetworkUpdate*)extraData, completion);
+	default:
+		return completion_result(SYSTEM_ERROR_INVALID_ARGUMENT, completion);
+	}
+}
+#endif // HAL_PLATFORM_MESH
 
 }}

@@ -24,6 +24,25 @@
 extern "C" {
 #endif
 
+// 1.2.0-alpha.1 < 1.2.0-alpha.63 < 1.2.0-beta.1 < 1.2.0-beta.63 < 1.2.0-rc.1 < 1.2.0-rc.2 < 1.2.0
+#define SYSTEM_VERSION_ALPHA(x, y, z, p) ((((x) & 0xFF) << 24) | \
+                                          (((y) & 0xFF) << 16) | \
+                                          (((z) & 0xFF) <<  8) | \
+                                          (((p) & 0x3F) | 0x00))
+#define SYSTEM_VERSION_BETA(x, y, z, p)  ((((x) & 0xFF) << 24) | \
+                                          (((y) & 0xFF) << 16) | \
+                                          (((z) & 0xFF) <<  8) | \
+                                          (((p) & 0x3F) | 0x40))
+#define SYSTEM_VERSION_RC(x, y, z, p)    ((((x) & 0xFF) << 24) | \
+                                          (((y) & 0xFF) << 16) | \
+                                          (((z) & 0xFF) <<  8) | \
+                                          (((p) & 0x3F) | 0x80))
+// (((p)) | 0xC0)) is reserved (0xC1 - 0xFE), unit-tests will fail if this range is detected.
+#define SYSTEM_VERSION_DEFAULT(x, y, z)  ((((x) & 0xFF) << 24) | \
+                                          (((y) & 0xFF) << 16) | \
+                                          (((z) & 0xFF) <<  8) | \
+                                           ((0xFF)))
+
 /**
  * This file is referenced from https://github.com/spark/firmware/wiki/Firmware-Release-Checklist
  */
@@ -71,7 +90,62 @@ extern "C" {
 #define SYSTEM_VERSION_v080RC1  0x00080001
 #define SYSTEM_VERSION_v080RC2  0x00080002
 #define SYSTEM_VERSION_v080RC3  0x00080003
-#define SYSTEM_VERSION SYSTEM_VERSION_v080RC3
+#define SYSTEM_VERSION_v080RC4  0x00080004
+#define SYSTEM_VERSION_v080RC5  0x00080005
+#define SYSTEM_VERSION_v080RC6  0x00080006
+#define SYSTEM_VERSION_v080RC7  0x00080007
+#define SYSTEM_VERSION_v080RC8  0x00080008
+#define SYSTEM_VERSION_v080RC9  0x00080009
+#define SYSTEM_VERSION_v080RC10 0x0008000a
+#define SYSTEM_VERSION_v080RC11 0x0008000b
+#define SYSTEM_VERSION_v080RC12 0x0008000c
+#define SYSTEM_VERSION_v080RC13 0x0008000d
+#define SYSTEM_VERSION_v080RC14 0x0008000e
+#define SYSTEM_VERSION_v080RC15 0x0008000f
+#define SYSTEM_VERSION_v080RC16 0x00080010
+#define SYSTEM_VERSION_v080RC17 0x00080011
+#define SYSTEM_VERSION_v080RC18 0x00080012
+#define SYSTEM_VERSION_v080RC19 0x00080013
+#define SYSTEM_VERSION_v080RC20 0x00080014
+#define SYSTEM_VERSION_v080RC21 0x00080015
+#define SYSTEM_VERSION_v080RC22 0x00080016
+#define SYSTEM_VERSION_v080RC23 0x00080017
+#define SYSTEM_VERSION_v080RC24 0x00080018
+#define SYSTEM_VERSION_v080RC25 0x00080019
+#define SYSTEM_VERSION_v080RC26 0x0008001a
+#define SYSTEM_VERSION_v080RC27 0x0008001b
+#define SYSTEM_VERSION_v090RC1  0x00090001
+#define SYSTEM_VERSION_v090RC2  0x00090002
+#define SYSTEM_VERSION_v090RC3  0x00090003
+#define SYSTEM_VERSION_v100     0x01000000
+#define SYSTEM_VERSION_v101RC1  0x01000101
+#define SYSTEM_VERSION_v101     0x01000100
+#define SYSTEM_VERSION_v110RC1  0x01010001
+#define SYSTEM_VERSION_v110RC2  0x01010002
+#define SYSTEM_VERSION_v110     0x01010000
+#define SYSTEM_VERSION_v120ALPHA1  SYSTEM_VERSION_ALPHA(1, 2, 0, 1)
+#define SYSTEM_VERSION_v120BETA1    SYSTEM_VERSION_BETA(1, 2, 0, 1)
+#define SYSTEM_VERSION_v120RC1        SYSTEM_VERSION_RC(1, 2, 0, 1)
+#define SYSTEM_VERSION_v121RC1        SYSTEM_VERSION_RC(1, 2, 1, 1)
+#define SYSTEM_VERSION_v121RC2        SYSTEM_VERSION_RC(1, 2, 1, 2)
+#define SYSTEM_VERSION_v121RC3        SYSTEM_VERSION_RC(1, 2, 1, 3)
+#define SYSTEM_VERSION_v121         SYSTEM_VERSION_DEFAULT(1, 2, 1)
+#define SYSTEM_VERSION_v130ALPHA1  SYSTEM_VERSION_ALPHA(1, 3, 0, 1)
+#define SYSTEM_VERSION_v130RC1        SYSTEM_VERSION_RC(1, 3, 0, 1)
+#define SYSTEM_VERSION_v131RC1        SYSTEM_VERSION_RC(1, 3, 1, 1)
+#define SYSTEM_VERSION_v131         SYSTEM_VERSION_DEFAULT(1, 3, 1)
+#define SYSTEM_VERSION_v140RC1        SYSTEM_VERSION_RC(1, 4, 0, 1)
+#define SYSTEM_VERSION_v140         SYSTEM_VERSION_DEFAULT(1, 4, 0)
+#define SYSTEM_VERSION_v141RC1        SYSTEM_VERSION_RC(1, 4, 1, 1)
+#define SYSTEM_VERSION_v141         SYSTEM_VERSION_DEFAULT(1, 4, 1)
+#define SYSTEM_VERSION_v142         SYSTEM_VERSION_DEFAULT(1, 4, 2)
+#define SYSTEM_VERSION SYSTEM_VERSION_v142
+
+/**
+ * Previously we would set the least significant byte to 0 for the final release, but to make
+ * version comparisons simpler, the final version LSB is now 0xFF
+ * 1.2.0-alpha.1 < 1.2.0-alpha.63 < 1.2.0-beta.1 < 1.2.0-beta.63 < 1.2.0-rc.1 < 1.2.0-rc.2 < 1.2.0
+ */
 
 /**
  * For Library/App creators. Can be used to ensure features/api's are present.
@@ -120,6 +194,55 @@ extern "C" {
 #define SYSTEM_VERSION_080RC1
 #define SYSTEM_VERSION_080RC2
 #define SYSTEM_VERSION_080RC3
+#define SYSTEM_VERSION_080RC4
+#define SYSTEM_VERSION_080RC5
+#define SYSTEM_VERSION_080RC6
+#define SYSTEM_VERSION_080RC7
+#define SYSTEM_VERSION_080RC8
+#define SYSTEM_VERSION_080RC9
+#define SYSTEM_VERSION_080RC10
+#define SYSTEM_VERSION_080RC11
+#define SYSTEM_VERSION_080RC12
+#define SYSTEM_VERSION_080RC13
+#define SYSTEM_VERSION_080RC14
+#define SYSTEM_VERSION_080RC15
+#define SYSTEM_VERSION_080RC16
+#define SYSTEM_VERSION_080RC17
+#define SYSTEM_VERSION_080RC18
+#define SYSTEM_VERSION_080RC19
+#define SYSTEM_VERSION_080RC20
+#define SYSTEM_VERSION_080RC21
+#define SYSTEM_VERSION_080RC22
+#define SYSTEM_VERSION_080RC23
+#define SYSTEM_VERSION_080RC24
+#define SYSTEM_VERSION_080RC25
+#define SYSTEM_VERSION_080RC26
+#define SYSTEM_VERSION_080RC27
+#define SYSTEM_VERSION_090RC1
+#define SYSTEM_VERSION_090RC2
+#define SYSTEM_VERSION_090RC3
+#define SYSTEM_VERSION_100
+#define SYSTEM_VERSION_101RC1
+#define SYSTEM_VERSION_101
+#define SYSTEM_VERSION_110RC1
+#define SYSTEM_VERSION_110RC2
+#define SYSTEM_VERSION_110
+#define SYSTEM_VERSION_120ALPHA1
+#define SYSTEM_VERSION_120BETA1
+#define SYSTEM_VERSION_120RC1
+#define SYSTEM_VERSION_121RC1
+#define SYSTEM_VERSION_121RC2
+#define SYSTEM_VERSION_121RC3
+#define SYSTEM_VERSION_121
+#define SYSTEM_VERSION_130ALPHA1
+#define SYSTEM_VERSION_130RC1
+#define SYSTEM_VERSION_131RC1
+#define SYSTEM_VERSION_131
+#define SYSTEM_VERSION_140RC1
+#define SYSTEM_VERSION_140
+#define SYSTEM_VERSION_141RC1
+#define SYSTEM_VERSION_141
+#define SYSTEM_VERSION_142
 
 typedef struct __attribute__((packed)) SystemVersionInfo
 {

@@ -40,6 +40,7 @@
 #include "delay_hal.h"
 // For ATOMIC_BLOCK
 #include "spark_wiring_interrupts.h"
+#include "deviceid_hal.h"
 
 #include <memory>
 
@@ -340,6 +341,31 @@ hal_update_complete_t HAL_FLASH_End(hal_module_t* mod)
     return result;
 }
 
+// Todo this code and much of the code here is duplicated between Gen2 and Gen3
+// This should be factored out into directory shared by both platforms.
+hal_update_complete_t HAL_FLASH_ApplyPendingUpdate(hal_module_t* module, bool dryRun, void* reserved)
+{
+    uint8_t otaUpdateFlag = DCT_OTA_UPDATE_FLAG_CLEAR;
+    STATIC_ASSERT(sizeof(otaUpdateFlag)==DCT_OTA_UPDATE_FLAG_SIZE, "expected ota update flag size to be 1");
+    dct_read_app_data_copy(DCT_OTA_UPDATE_FLAG_OFFSET, &otaUpdateFlag, DCT_OTA_UPDATE_FLAG_SIZE);
+    hal_update_complete_t result = HAL_UPDATE_ERROR;
+    if (otaUpdateFlag==DCT_OTA_UPDATE_FLAG_SET) {
+        if (dryRun) {
+            // todo - we should probably check the module integrity too
+            // ideally this parameter would be passed to HAL_FLASH_End to avoid duplication of logic here.
+            result = HAL_UPDATE_APPLIED;
+        }
+        else {
+            // clear the flag
+            otaUpdateFlag = DCT_OTA_UPDATE_FLAG_CLEAR;
+            dct_write_app_data(&otaUpdateFlag, DCT_OTA_UPDATE_FLAG_OFFSET, DCT_OTA_UPDATE_FLAG_SIZE);
+            result = HAL_FLASH_End(module);
+        }
+    }
+    return result;
+}
+
+
 void copy_dct(void* target, uint16_t offset, uint16_t length) {
     dct_read_app_data_copy(offset, target, length);
 }
@@ -457,15 +483,6 @@ int HAL_FLASH_Read_CorePrivateKey(uint8_t *keyBuffer, private_key_generation_t* 
 
 STATIC_ASSERT(Internet_Address_is_2_bytes_c1, sizeof(Internet_Address_TypeDef)==1);
 STATIC_ASSERT(ServerAddress_packed_c1, offsetof(ServerAddress, ip)==2);
-
-
-
-void check() {
-    // todo - why is this static assert giving a different result?
-    STATIC_ASSERT_EXPR(Internet_Address_is_2_bytes_c, sizeof(Internet_Address_TypeDef)==2);
-    STATIC_ASSERT_EXPR(ServerAddress_packed_c, offsetof(ServerAddress, ip)==4);
-}
-
 
 uint16_t HAL_Set_Claim_Code(const char* code)
 {
@@ -762,4 +779,43 @@ int store_server_address(server_protocol_type type, const ServerAddress* addr) {
         return ret;
     }
     return dct_write_app_data(buf.get(), offs, maxSize);
+}
+
+int fetch_system_properties(key_value* storage, int keyCount, uint16_t flags) {
+    int keys = 0;
+
+    if (storage) {
+        if (!(flags & HAL_SYSTEM_INFO_FLAGS_CLOUD) && keyCount && 0<hal_get_device_secret(storage[keys].value, sizeof(storage[0].value), nullptr)) {
+            storage[keys].key = "ms";
+            keyCount--;
+            keys++;
+        }
+        if (!(flags & HAL_SYSTEM_INFO_FLAGS_CLOUD) && keyCount && 0<hal_get_device_serial_number(storage[keys].value, sizeof(storage[0].value), nullptr)) {
+            storage[keys].key = "sn";
+            keyCount--;
+            keys++;
+        }
+        return keys;
+    }
+    else {
+        return 2;
+    }
+}
+
+int add_system_properties(hal_system_info_t* info, bool create, size_t additional) {
+    uint16_t flags = 0;
+    if (info->size >= sizeof(hal_system_info_t::flags) + offsetof(hal_system_info_t, flags)) {
+        flags = info->flags;
+    }
+
+    if (create) {
+        int keyCount = fetch_system_properties(nullptr, 0, flags);
+        info->key_values = new key_value[keyCount+additional];
+        info->key_value_count = fetch_system_properties(info->key_values, keyCount, flags);
+        return info->key_value_count;
+    } else {
+        delete[] info->key_values;
+        info->key_values = nullptr;
+        return 0;
+    }
 }

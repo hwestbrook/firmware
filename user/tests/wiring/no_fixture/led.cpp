@@ -5,6 +5,7 @@
 #include "application.h"
 #include "unit-test/unit-test.h"
 #include "rgbled.h"
+#include "rgbled_hal.h"
 #include <stdio.h>
 
 #ifdef abs
@@ -232,11 +233,19 @@ test(LED_11_MirroringWorks) {
     RGB.control(true);
     RGB.brightness(255);
 
+#if !HAL_PLATFORM_NRF52840
     const pin_t pins[3] = {A4, A5, A7};
-
+#else
+# if PLATFORM_ID == PLATFORM_XENON || PLATFORM_ID == PLATFORM_ARGON || PLATFORM_ID == PLATFORM_BORON
+    const pin_t pins[3] = {A4, A5, A3};
+# else
+    // SoM
+    const pin_t pins[3] = {A1, A0, A7};
+# endif // PLATFORM_ID == PLATFORM_XENON || PLATFORM_ID == PLATFORM_ARGON || PLATFORM_ID == PLATFORM_BORON
+#endif
     // Mirror to r=A4, g=A5, b=A7. Non-inverted (common cathode).
     // RGB led mirroring in bootloader is not enabled
-    RGB.mirrorTo(A4, A5, A7, false, false);
+    RGB.mirrorTo(pins[0], pins[1], pins[2], false, false);
 
     RGB.color(0, 0, 0);
     assertRgbLedMirrorPinsColor(pins, 0, 0, 0);

@@ -151,8 +151,9 @@ void Set_System(void)
 
     /* Configure the LEDs and set the default states */
     int LEDx;
-    for(LEDx = 0; LEDx < LEDn; ++LEDx)
+    for(LEDx = 1; LEDx < LEDn; ++LEDx)
     {
+        // LED_USER initialization is skipped during system setup
         LED_Init(LEDx);
     }
 
@@ -161,6 +162,11 @@ void Set_System(void)
 
     /* Sometimes Internal Flash Erase/Program fails if this is not called */
     FLASH_ClearFlags();
+}
+
+void Reset_System(void)
+{
+    SysTick_Disable();
 }
 
 /*******************************************************************************

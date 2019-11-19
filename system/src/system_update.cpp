@@ -42,6 +42,10 @@
 #include "spark_macros.h"
 #include "system_network_internal.h"
 #include "bytes2hexbuf.h"
+#include "system_threading.h"
+#if HAL_PLATFORM_DCT
+#include "dct.h"
+#endif // HAL_PLATFORM_DCT
 
 #ifdef START_DFU_FLASHER_SERIAL_SPEED
 static uint32_t start_dfu_flasher_serial_speed = START_DFU_FLASHER_SERIAL_SPEED;
@@ -52,8 +56,11 @@ static uint32_t start_ymodem_flasher_serial_speed = START_YMODEM_FLASHER_SERIAL_
 
 ymodem_serial_flash_update_handler Ymodem_Serial_Flash_Update_Handler = NULL;
 
+// TODO: Use a single state variable instead of SPARK_CLOUD_XXX flags
 volatile uint8_t SPARK_CLOUD_SOCKETED;
 volatile uint8_t SPARK_CLOUD_CONNECTED;
+volatile uint8_t SPARK_CLOUD_HANDSHAKE_PENDING = 0;
+volatile uint8_t SPARK_CLOUD_HANDSHAKE_NOTIFY_DONE = 0;
 volatile uint8_t SPARK_FLASH_UPDATE;
 volatile uint32_t TimingFlashUpdateTimeout;
 
@@ -61,29 +68,77 @@ static_assert(SYSTEM_FLAG_OTA_UPDATE_PENDING==0, "system flag value");
 static_assert(SYSTEM_FLAG_OTA_UPDATE_ENABLED==1, "system flag value");
 static_assert(SYSTEM_FLAG_RESET_PENDING==2, "system flag value");
 static_assert(SYSTEM_FLAG_RESET_ENABLED==3, "system flag value");
-static_assert(SYSTEM_FLAG_STARTUP_SAFE_LISTEN_MODE == 4, "system flag value");
+static_assert(SYSTEM_FLAG_STARTUP_LISTEN_MODE == 4, "system flag value");
 static_assert(SYSTEM_FLAG_WIFITESTER_OVER_SERIAL1 == 5, "system flag value");
 static_assert(SYSTEM_FLAG_PUBLISH_RESET_INFO == 6, "system flag value");
 static_assert(SYSTEM_FLAG_RESET_NETWORK_ON_CLOUD_ERRORS == 7, "system flag value");
-static_assert(SYSTEM_FLAG_MAX == 8, "system flag max value");
+static_assert(SYSTEM_FLAG_PM_DETECTION == 8, "system flag value");
+static_assert(SYSTEM_FLAG_OTA_UPDATE_FORCED == 9, "system flag value");
+static_assert(SYSTEM_FLAG_MAX == 10, "system flag max value");
 
 volatile uint8_t systemFlags[SYSTEM_FLAG_MAX] = {
     0, 1, // OTA updates pending/enabled
     0, 1, // Reset pending/enabled
-    0,    // SYSTEM_FLAG_STARTUP_SAFE_LISTEN_MODE,
+    0,    // SYSTEM_FLAG_STARTUP_LISTEN_MODE
     0,    // SYSTEM_FLAG_SETUP_OVER_SERIAL1
     1,    // SYSTEM_FLAG_PUBLISH_RESET_INFO
-    1     // SYSTEM_FLAG_RESET_NETWORK_ON_CLOUD_ERRORS
+    1,    // SYSTEM_FLAG_RESET_NETWORK_ON_CLOUD_ERRORS
+    0,    // UNUSED (SYSTEM_FLAG_PM_DETECTION)
+	0,	  // SYSTEM_FLAG_OTA_UPDATE_FORCED
 };
 
 const uint16_t SAFE_MODE_LISTEN = 0x5A1B;
 
+const char* UPDATES_ENABLED_EVENT = "particle/device/updates/enabled";
+const char* UPDATES_FORCED_EVENT = "particle/device/updates/forced";
+
+const char* flag_to_string(uint8_t flag) {
+    return flag ? "true" : "false";
+}
+
 void system_flag_changed(system_flag_t flag, uint8_t oldValue, uint8_t newValue)
 {
-    if (flag == SYSTEM_FLAG_STARTUP_SAFE_LISTEN_MODE)
+    if (flag == SYSTEM_FLAG_STARTUP_LISTEN_MODE)
     {
-        HAL_Core_Write_Backup_Register(BKP_DR_10, newValue ? SAFE_MODE_LISTEN : 0xFFFF);
+        HAL_Core_Write_Backup_Register(BKP_DR_09, newValue ? SAFE_MODE_LISTEN : 0xFFFF);
     }
+#if HAL_PLATFORM_POWER_MANAGEMENT_OPTIONAL
+    else if (flag == SYSTEM_FLAG_PM_DETECTION) {
+        static_assert(DCT_PM_DETECT_SIZE == sizeof(newValue), "");
+        system_get_flag(flag, &oldValue, nullptr);
+        if (oldValue != newValue) {
+            newValue = !newValue;
+            dct_write_app_data(&newValue, DCT_PM_DETECT_OFFSET, sizeof(newValue));
+        }
+    }
+#endif // HAL_PLATFORM_POWER_MANAGEMENT_OPTIONAL
+    else if (flag == SYSTEM_FLAG_OTA_UPDATE_ENABLED)
+    {
+        // publish the firmware enabled event
+        spark_send_event(UPDATES_ENABLED_EVENT, flag_to_string(newValue), 60, PUBLISH_EVENT_FLAG_ASYNC|PUBLISH_EVENT_FLAG_PRIVATE, nullptr);
+    }
+    else if (flag == SYSTEM_FLAG_OTA_UPDATE_FORCED)
+    {
+        // acknowledge to the cloud that system updates are forced. It helps avoid a race condition where we might try sending firmware before the event has been received.
+        spark_send_event(UPDATES_FORCED_EVENT, flag_to_string(newValue), 60, PUBLISH_EVENT_FLAG_ASYNC|PUBLISH_EVENT_FLAG_PRIVATE, nullptr);
+    }
+    else if (flag == SYSTEM_FLAG_OTA_UPDATE_PENDING)
+    {
+        if (newValue) {
+            system_notify_event(firmware_update_pending, 0, nullptr, nullptr, nullptr);
+            // publish an internal system event for pending updates
+    	}
+	}
+}
+
+/**
+ * Refreshes the flag by performing the update action.
+ */
+int system_refresh_flag(system_flag_t flag) {
+    uint8_t value;
+    int result = system_get_flag(flag, &value, nullptr);
+    system_flag_changed(flag, value, value);
+    return result;
 }
 
 int system_set_flag(system_flag_t flag, uint8_t value, void*)
@@ -91,7 +146,7 @@ int system_set_flag(system_flag_t flag, uint8_t value, void*)
     if (flag>=SYSTEM_FLAG_MAX)
         return -1;
 
-    if (systemFlags[flag]!=value) {
+    if (systemFlags[flag] != value || flag == SYSTEM_FLAG_STARTUP_LISTEN_MODE || flag == SYSTEM_FLAG_PM_DETECTION) {
         uint8_t oldValue = systemFlags[flag];
         systemFlags[flag] = value;
         system_flag_changed(flag, oldValue, value);
@@ -106,11 +161,22 @@ int system_get_flag(system_flag_t flag, uint8_t* value, void*)
         return -1;
     if (value)
     {
-        if (flag == SYSTEM_FLAG_STARTUP_SAFE_LISTEN_MODE)
+        if (flag == SYSTEM_FLAG_STARTUP_LISTEN_MODE)
         {
-            uint16_t reg = HAL_Core_Read_Backup_Register(BKP_DR_10);
+            uint16_t reg = HAL_Core_Read_Backup_Register(BKP_DR_09);
             *value = (reg == SAFE_MODE_LISTEN);
+            systemFlags[flag] = *value;
         }
+#if HAL_PLATFORM_POWER_MANAGEMENT_OPTIONAL
+        else if (flag == SYSTEM_FLAG_PM_DETECTION)
+        {
+            uint8_t v = 0;
+            static_assert(DCT_PM_DETECT_SIZE == sizeof(v), "");
+            auto r = dct_read_app_data_copy(DCT_PM_DETECT_OFFSET, &v, sizeof(v));
+            *value = !r && !v;
+            systemFlags[flag] = *value;
+        }
+#endif // HAL_PLATFORM_POWER_MANAGEMENT_OPTIONAL
         else
         {
             *value = systemFlags[flag];
@@ -186,7 +252,7 @@ void system_lineCodingBitRateHandler(uint32_t bitrate)
 #ifdef START_DFU_FLASHER_SERIAL_SPEED
     if (bitrate == start_dfu_flasher_serial_speed)
     {
-        network.connect_cancel(true);
+        network_connect_cancel(0, 1, 0, 0);
         //Reset device and briefly enter DFU bootloader mode
         System.dfu(false);
     }
@@ -225,21 +291,12 @@ int Spark_Prepare_For_Firmware_Update(FileTransfer::Descriptor& file, uint32_t f
         }
     }
     int result = 0;
-    if (flags & 1) {
-        // only check address
-    }
-    else {
-        uint32_t start = HAL_Timer_Milliseconds();
-        system_set_flag(SYSTEM_FLAG_OTA_UPDATE_PENDING, 1, nullptr);
-
-        volatile bool flag = false;
-        system_notify_event(firmware_update_pending, 0, nullptr, set_flag, (void*)&flag);
-
-        System.waitCondition([&flag]{return flag;}, timeRemaining(start, 30000));
-
-        system_set_flag(SYSTEM_FLAG_OTA_UPDATE_PENDING, 0, nullptr);
-        	if (System.updatesEnabled())		// application event is handled asynchronously
-        {
+    if (System.updatesEnabled() || System.updatesForced()) {		// application event is handled asynchronously
+        if (flags & 1) {
+            // only check address
+		}
+		else {
+            system_set_flag(SYSTEM_FLAG_OTA_UPDATE_PENDING, 0, nullptr);
             RGB.control(true);
             // Get base color used for the update process indication
             const LEDStatusData* status = led_signal_status(LED_SIGNAL_FIRMWARE_UPDATE, nullptr);
@@ -249,10 +306,9 @@ int Spark_Prepare_For_Firmware_Update(FileTransfer::Descriptor& file, uint32_t f
             system_notify_event(firmware_update, firmware_update_begin, &file);
             HAL_FLASH_Begin(file.file_address, file.file_length, NULL);
         }
-        else
-        {
-            result = 1;     // updates disabled
-        }
+    }
+    else {
+    	result = 1;
     }
     return result;
 }
@@ -329,12 +385,13 @@ int Spark_Finish_Firmware_Update(FileTransfer::Descriptor& file, uint32_t flags,
         if (file.store==FileTransfer::Store::FIRMWARE)
         {
             hal_update_complete_t result = HAL_FLASH_End(module ? (hal_module_t*)module : &mod);
-            system_notify_event(firmware_update, result!=HAL_UPDATE_ERROR ? firmware_update_complete : firmware_update_failed, &file);
-            res = (result == HAL_UPDATE_ERROR);
+            system_notify_event(firmware_update, result<=HAL_UPDATE_ERROR ? firmware_update_complete : firmware_update_failed, &file);
+            res = (result <= HAL_UPDATE_ERROR);
 
             // always restart for now
-            if (true || result==HAL_UPDATE_APPLIED_PENDING_RESTART)
+            if ((true || result==HAL_UPDATE_APPLIED_PENDING_RESTART) && !(flags & UpdateFlag::DONT_RESET))
             {
+                spark_protocol_command(sp, ProtocolCommands::DISCONNECT);
                 system_pending_shutdown();
             }
         }
@@ -485,6 +542,8 @@ const char* module_function_string(module_function_t func) {
         case MODULE_FUNCTION_MONO_FIRMWARE: return "m";
         case MODULE_FUNCTION_SYSTEM_PART: return "s";
         case MODULE_FUNCTION_USER_PART: return "u";
+        case MODULE_FUNCTION_NCP_FIRMWARE: return "c";
+        case MODULE_FUNCTION_RADIO_STACK: return "a";
         default: return "_";
     }
 }
@@ -496,6 +555,24 @@ const char* module_store_string(module_store_t store) {
         case MODULE_STORE_FACTORY: return "f";
         case MODULE_STORE_SCRATCHPAD: return "t";
         default: return "_";
+    }
+}
+
+bool is_module_function_valid(module_function_t func) {
+    switch (func) {
+        case MODULE_FUNCTION_RESOURCE:
+        case MODULE_FUNCTION_BOOTLOADER:
+        case MODULE_FUNCTION_MONO_FIRMWARE:
+        case MODULE_FUNCTION_SYSTEM_PART:
+        case MODULE_FUNCTION_USER_PART:
+        case MODULE_FUNCTION_NCP_FIRMWARE:
+        case MODULE_FUNCTION_RADIO_STACK: {
+            return true;
+        }
+        case MODULE_FUNCTION_NONE:
+        default: {
+            return false;
+        }
     }
 }
 
@@ -523,17 +600,33 @@ bool module_info_to_json(appender_fn append, void* append_data, const hal_module
     // on the photon we have just one dependency, this will need generalizing for other platforms
       && json.write_attribute("d") && json.write('[');
 
-    for (unsigned int d=0; d<2 && info; d++) {
+    bool hasDependencies = false;
+    for (unsigned int d=0; d<2; d++) {
         const module_dependency_t& dependency = d == 0 ? info->dependency : info->dependency2;
         module_function_t function = module_function_t(dependency.module_function);
-        if (function==MODULE_FUNCTION_NONE) // skip empty dependents
+        if (is_module_function_valid(function)) {
+            // skip empty dependents
+            hasDependencies = true;
+        }
+    }
+
+    bool cont = false;
+    for (unsigned int d=0; d<2 && info && hasDependencies; d++) {
+        const module_dependency_t& dependency = d == 0 ? info->dependency : info->dependency2;
+        module_function_t function = module_function_t(dependency.module_function);
+        if (!is_module_function_valid(function)) {
+            // Skip empty dependencies to save on space
             continue;
-        if (d) result &= json.write(',');
+        }
+        if (cont) {
+            result &= json.write(',');
+        }
         result &= json.write('{')
-          && json.write_string("f", module_function_string(function))
-          && json.write_string("n", module_name(dependency.module_index, buf))
-          && json.write_value("v", dependency.module_version)
-           && json.end_list() && json.write('}');
+                && json.write_string("f", module_function_string(function))
+                && json.write_string("n", module_name(dependency.module_index, buf))
+                && json.write_value("v", dependency.module_version)
+                && json.end_list() && json.write('}');
+        cont = true;
     }
     result &= json.write("]}");
 
@@ -548,10 +641,26 @@ bool system_info_to_json(appender_fn append, void* append_data, hal_system_info_
         && json.write_key_values(system.key_value_count, system.key_values)
         && json.write_attribute("m")
         && json.write('[');
+
+    bool cont = false;
     for (unsigned i=0; i<system.module_count; i++) {
-        if (i) result &= json.write(',');
         const hal_module_t& module = system.modules[i];
+#ifdef HYBRID_BUILD
+        // FIXME: skip, otherwise we overflow MBEDTLS_SSL_MAX_CONTENT_LEN
+        if (module.info->module_function == MODULE_FUNCTION_MONO_FIRMWARE) {
+            continue;
+        }
+#endif // HYBRID_BUILD
+        if (!module.info || !is_module_function_valid((module_function_t)module.info->module_function)) {
+            // Skip modules that do not contain binary at all, otherwise we easily overflow
+            // system describe message
+            continue;
+        }
+        if (cont) {
+            result &= json.write(',');
+        }
         result &= module_info_to_json(append, append_data, &module, 0);
+        cont = true;
     }
 
     result &= json.write(']');
@@ -581,6 +690,7 @@ bool system_module_info(appender_fn append, void* append_data, void* reserved)
     hal_system_info_t info;
     memset(&info, 0, sizeof(info));
     info.size = sizeof(info);
+    info.flags = HAL_SYSTEM_INFO_FLAGS_CLOUD;
     HAL_System_Info(&info, true, NULL);
     bool result = system_info_to_json(append, append_data, info);
     HAL_System_Info(&info, false, NULL);

@@ -1,6 +1,10 @@
 #!/bin/bash
 #
 # Top-level script for running unit tests.
+# for manual testing run
+# . install_boost.sh
+# ./unit_tests.sh
+
 ci_dir=$(dirname $BASH_SOURCE)
 cd $ci_dir
 
@@ -25,7 +29,7 @@ make all > build.log || die "Problem building unit tests. Please see build.log"
 make run > obj/TEST-${TRAVIS_BUILD_NUMBER}.xml
 
 if [ "$?" == "0" ]; then
-    echo Yay! Unit tests PASSED!    
+    echo Yay! Unit tests PASSED!
 else
     echo Bummer. Unit tests FAILED.
     exit 1
@@ -38,3 +42,12 @@ cd obj || die "cannot find obj dir"
 # production.
 # cp ../../../../ci/unitth/* .
 # java -jar unitth.jar . > unitth.log
+
+set -x -e
+
+# Run CMake-based unit tests
+cd $unit_test_dir
+rm -rf .build/*
+mkdir .build -p && cd .build/
+cmake ..
+make all test coveralls

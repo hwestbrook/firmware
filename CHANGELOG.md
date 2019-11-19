@@ -1,3 +1,1145 @@
+## 1.4.2
+
+>**Note:** If your Gen 2 Photon/P1 or Gen 3 device does not have a Cloud connection, it is recommended to update system firmware, and then the bootloader via CLI with `particle flash --serial bootloader.bin` (bootloaders found in Github release).
+>**Note:** If your Gen 3 device does not have a Cloud connection, this release will also require manually updating the SoftDevice via CLI. The instructions are available in the release notes and the SoftDevice binaries are available in the Github release.
+>
+>This release contains v501 bootloaders.
+
+### BUGFIXES
+
+- [Gen 3] Fixes a boot/crash-loop due to a `POWER_CLOCK_IRQn` firing in between the jump into the system firmware from the bootloader [#1948](https://github.com/particle-iot/device-os/pull/1948)
+
+## 1.4.1
+
+>**Note:** If your Gen 2 Photon/P1 or Gen 3 device does not have a Cloud connection, it is recommended to update system firmware, and then the bootloader via CLI with `particle flash --serial bootloader.bin` (bootloaders found in Github release).
+>**Note:** If your Gen 3 device does not have a Cloud connection, this release will also require manually updating the SoftDevice via CLI. The instructions are available in the release notes and the SoftDevice binaries are available in the Github release.
+>
+>This release contains v500 bootloaders.
+
+### FEATURES
+
+- [Gen 2] Adds support for serial number, NCP type and mobile secret in STM32F2 OTP area [#1927](https://github.com/particle-iot/device-os/pull/1927) [#1931](https://github.com/particle-iot/device-os/pull/1931/files)
+
+### ENHANCEMENTS
+
+- Implements a command to reset all network interfaces of a device remotely [#1943](https://github.com/particle-iot/device-os/pull/1943)
+- [Electron] Disables usage of `AT+UDNSRN` on 2G/3G Electrons in favor of a standalone socket-based DNS client [#1940](https://github.com/particle-iot/device-os/pull/1940)
+- [Electron, Boron] Increase the PMIC input current limit from 900mA to 1500mA and limit charging current to 896mA to allow 2G/3G devices to function when powered by sufficient power supply through VIN without the battery [#1921](https://github.com/particle-iot/device-os/pull/1921)
+- DTLS handshake timeout increased to 24 seconds to allow 3 retransmission attempts [#1914](https://github.com/particle-iot/device-os/pull/1914)
+
+### BUGFIXES
+
+- [Photon / P1] Limits maximum TLS version to TLS1.1 for WPA Enterprise authentication as TLS1.2 seems to be broken in WICED 3.7.0-7 [#1945](https://github.com/particle-iot/device-os/pull/1945)
+- [Boron] Fixes `attachInterrupt(D7, ...)` not working due to a constraint introduced previously for cellular devices (Electron) [#1939](https://github.com/particle-iot/device-os/pull/1939) [#1944](https://github.com/particle-iot/device-os/pull/1944)
+- Send safe mode event when the session is resumed [#1935](https://github.com/particle-iot/device-os/pull/1935)
+- [LTE, u-blox] adds a mitigation to keep DNS Client responsive ch38990 [#1938](https://github.com/particle-iot/device-os/pull/1938)
+- [Electron] Fixes RSSI failing due to Power Saving mode active [#1917](https://github.com/particle-iot/device-os/pull/1917) [#1892](https://github.com/particle-iot/device-os/pull/1892)
+- [Gen 3] Fixes memory leak when scanning for BLE devices [#1929](https://github.com/particle-iot/device-os/pull/1929) [#1926](https://github.com/particle-iot/device-os/pull/1926)
+- [Gen 3] Fixes reporting of discovered BLE peer characteristic descriptors [#1916](https://github.com/particle-iot/device-os/pull/1916)
+- [Gen 3] Fixes `BleCharacteristic::setValue()` with default `BLeTxRxType` argument (`BleTxRxType::AUTO`) for characteristics with `WRITE` property [#1915](https://github.com/particle-iot/device-os/pull/1915) [#1913](https://github.com/particle-iot/device-os/issues/1913) [#1924](https://github.com/particle-iot/device-os/issues/1924)
+
+
+### INTERNAL
+
+- [test] i2c_mcp23017: implements HighPriorityInterruptInterferer for nRF52840-based platforms [#1947](https://github.com/particle-iot/device-os/pull/1947)
+- [LTE] Removes log noise by closing only untracked socket handles that are open ch37610 [#1938](https://github.com/particle-iot/device-os/pull/1938)
+- [ci] Buildpack builder updated to 0.0.8 to move buildpack builds off of Travis
+- [docs] Adds Artifact Versioning and Tagging (1.0.0) artifacts.md [#1703](https://github.com/particle-iot/device-os/pull/1703)
+
+
+## 1.4.1-rc.1
+
+>**Note:** If your Gen 2 Photon/P1 or Gen 3 device does not have a Cloud connection, it is recommended to update system firmware, and then the bootloader via CLI with `particle flash --serial bootloader.bin` (bootloaders found in Github release).
+>**Note:** If your Gen 3 device does not have a Cloud connection, this release will also require manually updating the SoftDevice via CLI. The instructions are available in the release notes and the SoftDevice binaries are available in the Github release.
+>
+>This release contains v500 bootloaders.
+
+### FEATURES
+
+- [Gen 2] Adds support for serial number, NCP type and mobile secret in STM32F2 OTP area [#1927](https://github.com/particle-iot/device-os/pull/1927) [#1931](https://github.com/particle-iot/device-os/pull/1931/files)
+
+### ENHANCEMENTS
+
+- [Electron, Boron] Increase the PMIC input current limit from 900mA to 1500mA and limit charging current to 896mA to allow 2G/3G devices to function when powered by sufficient power supply through VIN without the battery [#1921](https://github.com/particle-iot/device-os/pull/1921)
+- DTLS handshake timeout increased to 24 seconds to allow 3 retransmission attempts [#1914](https://github.com/particle-iot/device-os/pull/1914)
+
+### BUGFIXES
+
+- [Electron] Fixes RSSI failing due to Power Saving mode active [#1917](https://github.com/particle-iot/device-os/pull/1917) [#1892](https://github.com/particle-iot/device-os/pull/1892)
+- [Gen 3] Fixes memory leak when scanning for BLE devices [#1929](https://github.com/particle-iot/device-os/pull/1929) [#1926](https://github.com/particle-iot/device-os/pull/1926)
+- [Gen 3] Fixes reporting of discovered BLE peer characteristic descriptors [#1916](https://github.com/particle-iot/device-os/pull/1916)
+- [Gen 3] Fixes `BleCharacteristic::setValue()` with default `BLeTxRxType` argument (`BleTxRxType::AUTO`) for characteristics with `WRITE` property [#1915](https://github.com/particle-iot/device-os/pull/1915) [#1913](https://github.com/particle-iot/device-os/issues/1913) [#1924](https://github.com/particle-iot/device-os/issues/1924)
+
+### INTERNAL
+
+- [ci] Buildpack builder updated to unreleased branch `feature/buildpack-runnable-without-travis` to move buildpack builds off of Travis
+- [docs] Adds Artifact Versioning and Tagging (1.0.0) artifacts.md [#1703](https://github.com/particle-iot/device-os/pull/1703)
+
+## 1.4.0
+
+>**Note:** If your Gen 2 Photon/P1 or Gen 3 device does not have a Cloud connection, it is recommended to update system firmware, and then the bootloader via CLI with `particle flash --serial bootloader.bin` (bootloaders found in Github release).
+>**Note:** If your Gen 3 device does not have a Cloud connection, this release will also require manually updating the SoftDevice via CLI. The instructions are available in the release notes and the SoftDevice binaries are available in the Github release.
+>
+>This release contains v500 bootloaders.
+
+### FEATURES
+
+- [Gen 3] Introduces BLE.begin() and BLE.end() wiring APIs [#1890](https://github.com/particle-iot/device-os/pull/1890)
+- [Gen 3] Exposes POSIX `select()` and `poll()` from socket HAL dynalib [#1895](https://github.com/particle-iot/device-os/pull/1895)
+
+### ENHANCEMENTS
+
+- [Gen 3] Adds `BleCharacteristic::setValue(..., BleTxRxType)` API to send data with or without acknowledgement [#1901](https://github.com/particle-iot/device-os/pull/1901)
+- [Gen 3] Alternately broadcast user's and Particle-specific BLE advertising data when the device is in the Listening mode [#1882](https://github.com/particle-iot/device-os/pull/1882)
+- Updates FreeRTOS from [10.0.1](https://github.com/particle-iot/freertos/commit/3feb84fee1840c0a8a3ea50810fb5f3e7527c6ce) to [10.2.1](https://github.com/particle-iot/freertos/commit/c4e1510c832f9467169f2ab7165ec49d3ce7428a). [Changelog](https://gist.github.com/avtolstoy/2f4b147f3a678bef75afde818a8ff77c) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates Catch2 from [2.4.2](https://github.com/particle-iot/catch2/commit/03d122a35c3f5c398c43095a87bc82ed44642516) to [2.9.1](https://github.com/particle-iot/catch2/commit/2f631bb8087a0355d2b23a75a28d936ce237659d). [Changelog](https://gist.github.com/avtolstoy/4b628c894798b4d0b3617860030de788) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates FakeIt from [2.0.5-7-g362271d](https://github.com/particle-iot/fakeit/commit/362271de8f59178aaf12fc0c27de1a814ee5a98d) to [2.0.5-13-g317419c](https://github.com/particle-iot/fakeit/317419c2e2f5a98e023a4d62628eb149fe3d3c3a). [Changelog](https://gist.github.com/avtolstoy/63742d7e03949a651bc74d240f903113) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates LittleFS from [1.6.0](https://github.com/particle-iot/littlefs/commit/9996634a148c68f6135318cce0f69b9debf73469) to [1.7.2](https://github.com/particle-iot/littlefs/commit/ed07f602fbfa5e9bd905829997436c607f10837a). [Changelog](https://gist.github.com/avtolstoy/1af0fb67f6e15d1b7711a49759cbdfb9). [Fork diff](https://github.com/particle-iot/littlefs/compare/7e110b44c0e796dc56e2fe86587762d685653029...ed07f602fbfa5e9bd905829997436c607f10837a) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates LwIP from [2.0.5](https://github.com/particle-iot/lwip/commit/362271de8f59178aaf12fc0c27de1a814ee5a98d) to [2.1.2](https://github.com/particle-iot/lwip/commit/4fe04959e5665dc58cb2552f750d82e257aab87d). [Changelog](https://gist.github.com/avtolstoy/1a5d6bf832451ce4329151eb2995ce0f). [Fork diff](https://github.com/particle-iot/lwip/compare/bd116cd6d9627ebdae41bb061a6e39cbd7909e60...4fe04959e5665dc58cb2552f750d82e257aab87d) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates LwIP Contrib from [2.0.0](https://github.com/particle-iot/lwip-contrib/commit/cce6cd11ffc1e0bddcb5a9c96674d1a7ae73e36f) to [2.1.2](https://github.com/particle-iot/lwip-contrib/commit/35b011d4cf4c4b480f8859c456587a884ec9d287). [Changelog](https://gist.github.com/avtolstoy/4cb3f7ae77ec359bc797528ab1a98412) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates MbedTLS from [2.9.0](https://github.com/particle-iot/mbedtls/commit/48fe5b1030039557c6a6340d22bb473fc8042920) to [2.16.2](https://github.com/particle-iot/mbedtls/commit/4e4e631f48e72448213ac340e172ea8442dc442b). [Changelog](https://gist.github.com/avtolstoy/50db3f7c10c5479f5fd9fa817b7df693). [Fork diff](https://github.com/particle-iot/mbedtls/compare/a8a2d73d794ff28b2079ca9ccbf98bb0e97cb3b3...4e4e631f48e72448213ac340e172ea8442dc442b) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates miniz from [2.0.7](https://github.com/particle-iot/miniz/commit/f07041c88cdbb5a85401a0f49366cac2143871d8) to [2.1.0](https://github.com/particle-iot/miniz/commit/af839bf788cec53c0d72f22e46cf58701498e264). [Changelog](https://gist.github.com/avtolstoy/c22df11f316203fc1857d039802525de). [Fork diff](https://github.com/particle-iot/miniz/compare/be54fea1c66154ad98a01b890a17043858837d26...af839bf788cec53c0d72f22e46cf58701498e264) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates nanopb from [0.3.9](https://github.com/particle-iot/nanopb/commit/2d40a90db76036458cf1150cdf5979e5e5fc77c6) to [0.3.9.3](https://github.com/particle-iot/nanopb/commit/6b91cc53dfb53ff5cd34bd2e057fbfc8ae7f12eb). [Changelog](https://gist.github.com/avtolstoy/96f3078e4076129a6cb62be69f62c287). [Fork diff](https://github.com/particle-iot/nanopb/compare/74171dee87de0c2465fd9cef1d8b296f8cb17746...6b91cc53dfb53ff5cd34bd2e057fbfc8ae7f12eb) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates OpenThread from [20190130](https://github.com/particle-iot/openthread/commit/0eab4ecddd8208741ae5856275e2dc2bee8e0838) to [20190709](https://github.com/particle-iot/openthread/commit/1bb328f93b7feba919e81f63ebe5a9745811239a). [Changelog](https://gist.github.com/avtolstoy/1408ced79f33291f51c2a0e9c9f94fdd). [Fork diff](https://github.com/particle-iot/openthread/compare/f2ea476c3afaa7bf51dc71d4a5713510e2b8c10d...1bb328f93b7feba919e81f63ebe5a9745811239a) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates WizNet Ethernet Driver from [20180515](https://github.com/particle-iot/ioLibrary_Driver/commit/53401b1d55b63641f60577e40e6996da59d71fd5) to [20190529](https://github.com/particle-iot/ioLibrary_Driver/commit/890a73fb8beb1ccbd5a43d1f6aee545bd883fb46). [Changelog](https://gist.github.com/avtolstoy/2c5d13ef00886136aefaaeca51af6a72). [Fork diff](https://github.com/particle-iot/ioLibrary_Driver/compare/b5592d446dbed91704d0fde88e7aff748df1887d...d4e78e46259069d02c3383e7792432e12b9c54c1) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+
+### BUGFIXES
+
+- Fixes an issue in `IPAddress::operator bool()` causing the operator to return `false` for valid IPv6 addresses [#1912](https://github.com/particle-iot/device-os/pull/1912)
+- Fixes [#1865](https://github.com/particle-iot/device-os/issues/1865), `TCPClient::connect()` return values [#1909](https://github.com/particle-iot/device-os/pull/1909)
+- [Gen 2] [LTE] fixes slow to close TCP sockets on SARA-R410M-02B [ch35609] [#1909](https://github.com/particle-iot/device-os/pull/1909)
+- [Gen 3] Subscribes both notification and indication if both properties are present in peer BLE characteristic [#1901](https://github.com/particle-iot/device-os/pull/1901)
+- [Gen 3] Restricts `BleCharacteristic` templated `getValue()` and `setValue()` arguments to be standard layout [#1901](https://github.com/particle-iot/device-os/pull/1901)
+- [Gen 3] `BleUuid` comparison operators are no longer case-sensitive [#1902](https://github.com/particle-iot/device-os/pull/1902)
+- [Gen 3] Fixes `BleCharacteristic` constructor template to accept characteristic and service UUID arguments with different types [#1902](https://github.com/particle-iot/device-os/pull/1902)
+- Fixes `SerialLogHandler` interfering with the Serial setup console in listening mode [#1909](https://github.com/particle-iot/device-os/pull/1909)
+- Fixes a regression introduced in 1.1.0 where the system layer was always sending its handshake messages even if the session was resumed causing increased data usage [#1905](https://github.com/particle-iot/device-os/pull/1905)
+- Properly seeds `rand()` in multiple threads including system thread. Fixes ephemeral port allocation in LwIP on Gen 3 platforms [#1905](https://github.com/particle-iot/device-os/pull/1905)
+- Control requests that reset the device (e.g. `particle usb dfu`) no longer cause unnecessary reconnection to the cloud [#1905](https://github.com/particle-iot/device-os/pull/1905)
+- Initialize user module in monolithic builds [#1905](https://github.com/particle-iot/device-os/pull/1905)
+- [Gen 3] Fixes heap and application static RAM overlap introduced in 1.3.0-rc.1 [#1898](https://github.com/particle-iot/device-os/pull/1898)
+- Fixes tinker build errors when building with `LOG_SERIAL=y` [#1898](https://github.com/particle-iot/device-os/pull/1898)
+- [Gen 3] Restored default BLE device address is incorrect. [#1891](https://github.com/particle-iot/device-os/pull/1891)
+- [Gen 3] Read BLE device name might be contracted. [#1891](https://github.com/particle-iot/device-os/pull/1891)
+- [Gen 3] operator& of the BleCharacteristicProperty enum class doesn't work as expected. [#1891](https://github.com/particle-iot/device-os/pull/1891)
+- [Gen 3] The length of got advertising and scan response data is not updated. [#1891](https://github.com/particle-iot/device-os/pull/1891)
+- Fixes dynalib alignment issue when compiling relatively large applications potentially due to an unconfirmed bug in GCC by moving the dynalib into a separate section (`.dynalib`) [#1894](https://github.com/particle-iot/device-os/pull/1894)
+- [Gen 3] Fixes incorrect handling of `MODULE_INFO_FLAG_DROP_MODULE_INFO` in the bootloader [#1897](https://github.com/particle-iot/device-os/pull/1897)
+- [Gen 3] Adds a dummy suffix to the NCP and SoftDevice modules' module info with unique SHA to cause the communication layer to detect the change in SYSTEM DESCRIBE after NCP or SoftDevice update [#1897](https://github.com/particle-iot/device-os/pull/1897)
+
+### INTERNAL
+
+- Minor enhancements in `wiring/no_fixture` and `wiring/no_fixture_long_running` tests [#1912](https://github.com/particle-iot/device-os/pull/1912)
+- [Git] Fixes whitespace issues in `.gitmodules` [#1910](https://github.com/particle-iot/device-os/pull/1910)
+- [Gen 3] Adds `wiring/no_fixture_ble`, `wiring/ble_central_peripheral` and `wiring/ble_scanner_broadcaster` on-device tests [#1901](https://github.com/particle-iot/device-os/pull/1901)
+- Update release script to include Electron without DEBUG_BUILD=y and tinker-serial-debugging apps for Gen 3 [#1903](https://github.com/particle-iot/device-os/pull/1903)
+- [Photon / P1] Changes to support building combined images for the recent releases [#1887](https://github.com/particle-iot/device-os/pull/1887)
+- `wiring/no_fixture` test adjustments for Gen 2 and Gen 3 platforms [#1898](https://github.com/particle-iot/device-os/pull/1898)
+- Coveralls test coverage reports generated by Travis [#1896](https://github.com/particle-iot/device-os/pull/1896)
+
+## 1.4.0-rc.1
+
+### FEATURES
+
+- [Gen 3] Introduces BLE.begin() and BLE.end() wiring APIs [#1890](https://github.com/particle-iot/device-os/pull/1890)
+- [Gen 3] Exposes POSIX `select()` and `poll()` from socket HAL dynalib [#1895](https://github.com/particle-iot/device-os/pull/1895)
+
+### ENHANCEMENTS
+
+- [Gen 3] Alternately broadcast user's and Particle-specific BLE advertising data when the device is in the Listening mode [#1882](https://github.com/particle-iot/device-os/pull/1882)
+- Updates FreeRTOS from [10.0.1](https://github.com/particle-iot/freertos/commit/3feb84fee1840c0a8a3ea50810fb5f3e7527c6ce) to [10.2.1](https://github.com/particle-iot/freertos/commit/c4e1510c832f9467169f2ab7165ec49d3ce7428a). [Changelog](https://gist.github.com/avtolstoy/2f4b147f3a678bef75afde818a8ff77c) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates Catch2 from [2.4.2](https://github.com/particle-iot/catch2/commit/03d122a35c3f5c398c43095a87bc82ed44642516) to [2.9.1](https://github.com/particle-iot/catch2/commit/2f631bb8087a0355d2b23a75a28d936ce237659d). [Changelog](https://gist.github.com/avtolstoy/4b628c894798b4d0b3617860030de788) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates FakeIt from [2.0.5-7-g362271d](https://github.com/particle-iot/fakeit/commit/362271de8f59178aaf12fc0c27de1a814ee5a98d) to [2.0.5-13-g317419c](https://github.com/particle-iot/fakeit/317419c2e2f5a98e023a4d62628eb149fe3d3c3a). [Changelog](https://gist.github.com/avtolstoy/63742d7e03949a651bc74d240f903113) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates LittleFS from [1.6.0](https://github.com/particle-iot/littlefs/commit/9996634a148c68f6135318cce0f69b9debf73469) to [1.7.2](https://github.com/particle-iot/littlefs/commit/ed07f602fbfa5e9bd905829997436c607f10837a). [Changelog](https://gist.github.com/avtolstoy/1af0fb67f6e15d1b7711a49759cbdfb9). [Fork diff](https://github.com/particle-iot/littlefs/compare/7e110b44c0e796dc56e2fe86587762d685653029...ed07f602fbfa5e9bd905829997436c607f10837a) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates LwIP from [2.0.5](https://github.com/particle-iot/lwip/commit/362271de8f59178aaf12fc0c27de1a814ee5a98d) to [2.1.2](https://github.com/particle-iot/lwip/commit/4fe04959e5665dc58cb2552f750d82e257aab87d). [Changelog](https://gist.github.com/avtolstoy/1a5d6bf832451ce4329151eb2995ce0f). [Fork diff](https://github.com/particle-iot/lwip/compare/bd116cd6d9627ebdae41bb061a6e39cbd7909e60...4fe04959e5665dc58cb2552f750d82e257aab87d) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates LwIP Contrib from [2.0.0](https://github.com/particle-iot/lwip-contrib/commit/cce6cd11ffc1e0bddcb5a9c96674d1a7ae73e36f) to [2.1.2](https://github.com/particle-iot/lwip-contrib/commit/35b011d4cf4c4b480f8859c456587a884ec9d287). [Changelog](https://gist.github.com/avtolstoy/4cb3f7ae77ec359bc797528ab1a98412) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates MbedTLS from [2.9.0](https://github.com/particle-iot/mbedtls/commit/48fe5b1030039557c6a6340d22bb473fc8042920) to [2.16.2](https://github.com/particle-iot/mbedtls/commit/4e4e631f48e72448213ac340e172ea8442dc442b). [Changelog](https://gist.github.com/avtolstoy/50db3f7c10c5479f5fd9fa817b7df693). [Fork diff](https://github.com/particle-iot/mbedtls/compare/a8a2d73d794ff28b2079ca9ccbf98bb0e97cb3b3...4e4e631f48e72448213ac340e172ea8442dc442b) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates miniz from [2.0.7](https://github.com/particle-iot/miniz/commit/f07041c88cdbb5a85401a0f49366cac2143871d8) to [2.1.0](https://github.com/particle-iot/miniz/commit/af839bf788cec53c0d72f22e46cf58701498e264). [Changelog](https://gist.github.com/avtolstoy/c22df11f316203fc1857d039802525de). [Fork diff](https://github.com/particle-iot/miniz/compare/be54fea1c66154ad98a01b890a17043858837d26...af839bf788cec53c0d72f22e46cf58701498e264) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates nanopb from [0.3.9](https://github.com/particle-iot/nanopb/commit/2d40a90db76036458cf1150cdf5979e5e5fc77c6) to [0.3.9.3](https://github.com/particle-iot/nanopb/commit/6b91cc53dfb53ff5cd34bd2e057fbfc8ae7f12eb). [Changelog](https://gist.github.com/avtolstoy/96f3078e4076129a6cb62be69f62c287). [Fork diff](https://github.com/particle-iot/nanopb/compare/74171dee87de0c2465fd9cef1d8b296f8cb17746...6b91cc53dfb53ff5cd34bd2e057fbfc8ae7f12eb) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates OpenThread from [20190130](https://github.com/particle-iot/openthread/commit/0eab4ecddd8208741ae5856275e2dc2bee8e0838) to [20190709](https://github.com/particle-iot/openthread/commit/1bb328f93b7feba919e81f63ebe5a9745811239a). [Changelog](https://gist.github.com/avtolstoy/1408ced79f33291f51c2a0e9c9f94fdd). [Fork diff](https://github.com/particle-iot/openthread/compare/f2ea476c3afaa7bf51dc71d4a5713510e2b8c10d...1bb328f93b7feba919e81f63ebe5a9745811239a) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+- Updates WizNet Ethernet Driver from [20180515](https://github.com/particle-iot/ioLibrary_Driver/commit/53401b1d55b63641f60577e40e6996da59d71fd5) to [20190529](https://github.com/particle-iot/ioLibrary_Driver/commit/890a73fb8beb1ccbd5a43d1f6aee545bd883fb46). [Changelog](https://gist.github.com/avtolstoy/2c5d13ef00886136aefaaeca51af6a72). [Fork diff](https://github.com/particle-iot/ioLibrary_Driver/compare/b5592d446dbed91704d0fde88e7aff748df1887d...d4e78e46259069d02c3383e7792432e12b9c54c1) [#1864](https://github.com/particle-iot/device-os/pull/1864)
+
+### BUGFIXES
+
+- [Gen 3] Fixes heap and application static RAM overlap introduced in 1.3.0-rc.1 [#1898](https://github.com/particle-iot/device-os/pull/1898)
+- Fixes tinker build errors when building with `LOG_SERIAL=y` [#1898](https://github.com/particle-iot/device-os/pull/1898)
+- [Gen 3] Restored default BLE device address is incorrect. [#1891](https://github.com/particle-iot/device-os/pull/1891)
+- [Gen 3] Read BLE device name might be contracted. [#1891](https://github.com/particle-iot/device-os/pull/1891)
+- [Gen 3] operator& of the BleCharacteristicProperty enum class doesn't work as expected. [#1891](https://github.com/particle-iot/device-os/pull/1891)
+- [Gen 3] The length of got advertising and scan response data is not updated. [#1891](https://github.com/particle-iot/device-os/pull/1891)
+- Fixes dynalib alignment issue when compiling relatively large applications potentially due to an unconfirmed bug in GCC by moving the dynalib into a separate section (`.dynalib`) [#1894](https://github.com/particle-iot/device-os/pull/1894)
+- [Gen 3] Fixes incorrect handling of `MODULE_INFO_FLAG_DROP_MODULE_INFO` in the bootloader [#1897](https://github.com/particle-iot/device-os/pull/1897)
+- [Gen 3] Adds a dummy suffix to the NCP and SoftDevice modules' module info with unique SHA to cause the communication layer to detect the change in SYSTEM DESCRIBE after NCP or SoftDevice update [#1897](https://github.com/particle-iot/device-os/pull/1897)
+
+### INTERNAL
+
+- [Photon / P1] Changes to support building combined images for the recent releases [#1887](https://github.com/particle-iot/device-os/pull/1887)
+- `wiring/no_fixture` test adjustments for Gen 2 and Gen 3 platforms [#1898](https://github.com/particle-iot/device-os/pull/1898)
+- Coveralls test coverage reports generated by Travis [#1896](https://github.com/particle-iot/device-os/pull/1896)
+
+## 1.3.1
+
+>**Note:** If your Gen 2 Photon/P1 or Gen 3 device does not have a Cloud connection, it is recommended to update system firmware, and then the bootloader via CLI with `particle flash --serial bootloader.bin` (bootloaders found in Github release).
+>
+>This release contains v401 bootloaders.
+
+### FEATURES
+
+- [gen 3] Nordic SoftDevice update support [#1816](https://github.com/particle-iot/device-os/pull/1816)
+- [gen 3] API for selecting BLE antenna for BLE radio [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] API for setting/getting BLE device name [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] API for setting BLE device address [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] API for manually discovering peer device's BLE services and characteristics [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] API for fetching discovered peer's services and characteristics [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] API in BlePeerDevice for establishing BLE connection without scanning required [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] API for manually subscribing/unsubscribing peer characteristic's notification [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] API for disconnecting all on-going BLE connections [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] BLE support [#1740](https://github.com/particle-iot/device-os/pull/1740)
+- [gen 3] NFC support [#1606](https://github.com/particle-iot/device-os/pull/1606)
+
+### ENHANCEMENTS
+
+- [Boron/BSoM] power: Increases charging current to 900mA when powered through VIN (VUSB) pin [#1846](https://github.com/particle-iot/device-os/pull/1846)
+- Cancel network connection when processing a USB request that resets the device [#1830](https://github.com/particle-iot/device-os/pull/1830)
+- Particle.connected() should return true only after handshake messages are acknowledged [#1825](https://github.com/particle-iot/device-os/pull/1825)
+- [gen 3] USB state tracking enhancements [#1871](https://github.com/particle-iot/device-os/pull/1871)
+- [gen 3] Adds timeouts to I2C HAL operations [#1875](https://github.com/particle-iot/device-os/pull/1875)
+- [gen 3] Refactors BLE event dispatching [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] Decreases BLE runtime RAM consumption [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] Supports up to 23 local characteristics, 20 of them are available for user application [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] Supports up to 3 central links [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] More convenient methods provided in BleUuid class [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- ensures AT interface is responsive [#1886](https://github.com/particle-iot/device-os/pull/1886)
+- [enhancement] Cache cellular diagnostics [#1810](https://github.com/particle-iot/device-os/pull/1810)
+- [enhancement] allow the bootloader to be flashed over DFU [#1788](https://github.com/particle-iot/device-os/pull/1788)
+
+### BUG FIXES
+
+- [Gen 3] Fixes heap and application static RAM overlap introduced in 1.3.0-rc.1 [#1898](https://github.com/particle-iot/device-os/pull/1898)
+- Fixes tinker build errors when building with `LOG_SERIAL=y` [#1898](https://github.com/particle-iot/device-os/pull/1898)
+- Fixes dynalib alignment issue when compiling relatively large applications potentially due to an unconfirmed bug in GCC by moving the dynalib into a separate section (`.dynalib`) [#1894](https://github.com/particle-iot/device-os/pull/1894)
+- [Gen 3] Fixes incorrect handling of `MODULE_INFO_FLAG_DROP_MODULE_INFO` in the bootloader [#1897](https://github.com/particle-iot/device-os/pull/1897)
+- [Gen 3] Adds a dummy suffix to the NCP and SoftDevice modules' module info with unique SHA to cause the communication layer to detect the change in SYSTEM DESCRIBE after NCP or SoftDevice update [#1897](https://github.com/particle-iot/device-os/pull/1897)
+- Fixes a regression introduced in 1.1.0 where the system layer was always sending its handshake messages even if the session was resumed causing increased data usage [#1905](https://github.com/particle-iot/device-os/pull/1905)
+- Properly seeds `rand()` in multiple threads including system thread. Fixes ephemeral port allocation in LwIP on Gen 3 platforms [#1905](https://github.com/particle-iot/device-os/pull/1905)
+- Control requests that reset the device (e.g. `particle usb dfu`) no longer cause unnecessary reconnection to the cloud [#1905](https://github.com/particle-iot/device-os/pull/1905)
+- Initialize user module in monolithic builds [#1905](https://github.com/particle-iot/device-os/pull/1905)
+- fixes RSSI regression on G350 (2G) devices [#1841](https://github.com/particle-iot/device-os/pull/1841)
+- [electron, gen3] Temporarily increase IDLE task priority whenever a thread exits (calls vTaskDelete) to resolve a memory leak that resulted in device being stuck "blinking green" until reset in some cases. [#1862](https://github.com/particle-iot/device-os/pull/1862)
+- [gen 3] Fixes mesh pub/sub socket consuming all packet buffers [#1839](https://github.com/particle-iot/device-os/pull/1839)
+- [Photon/P1] Bootloader correctly re-imports the DCT functions from system firmware after its modification through DFU [#1868](https://github.com/particle-iot/device-os/pull/1868)
+- [gen 3] `Mesh.off()` disconnects the cloud. Resolves an issue with `loop()` not being executed in `SEMI_AUTOMATIC` mode after `Mesh.off()` [#1857](https://github.com/particle-iot/device-os/pull/1857)
+- [Argon] Fixes the issue being unable to reset the device through RST pin by changing the ESPEN mode to `OUTPUT_OPEN_DRAIN` [#1870](https://github.com/particle-iot/device-os/pull/1870)
+- [Electron/LTE] devices drop Cloud connection every time user firmware opens and closes a TCP socket [ch34976]() [#1854](https://github.com/particle-iot/device-os/pull/1854)
+- [gen 2] Fixes an issue with clock stretching in I2C slave mode with underrun reads with certain I2C masters (e.g. Gen 3 devices) [#1829](https://github.com/particle-iot/device-os/pull/1829)
+- Fix to ensure device resets after bootloader update [#1873](https://github.com/particle-iot/device-os/pull/1873)
+- Fixes boot issue for Core introduced in 1.2.1-rc.3 [#1873](https://github.com/particle-iot/device-os/pull/1873)
+- [gen 3] Resolved a HardFault after USB cable is unplugged under certain conditions [#1871](https://github.com/particle-iot/device-os/pull/1871)
+- [gen 3] BLE advertising parameters didn't apply, issue #1874 [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] BLE scanning parameters didn't apply, issue #1859 and #1855 [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] Local characteristic notification causes SOS: [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] BLE address order reversed [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gcc] fixes virtual platform exception on startup [#1878](https://github.com/particle-iot/device-os/pull/1878)
+- Add two-digit mnc diagnostic flag [#1804](https://github.com/particle-iot/device-os/pull/1807)
+- BLE fixes from 1.3.0-alpha.1 [#1817](https://github.com/particle-iot/device-os/pull/1817)
+- NFC Context parameter is missing and NFC.update() will remove callback, fixes from 1.3.0-alpha.1 [#1818](https://github.com/particle-iot/device-os/pull/1818)
+- [lte] cellular fixes [#1824](https://github.com/particle-iot/device-os/pull/1824)
+- fixes #1811 - increases the number of event handlers to 6 [#1822](https://github.com/particle-iot/device-os/pull/1822)
+- [gen 3] fixes memory usage diagnostics (reported negative values in safe mode) [#1819](https://github.com/particle-iot/device-os/pull/1819)
+- System.disableUpdates() operates asynchronously [#1801](https://github.com/particle-iot/device-os/pull/1801)
+- [gen 3] [bsom] Building platform BSOM results flash overflow. [#1802](https://github.com/particle-iot/device-os/pull/1802)
+- [gen 3] [hal] fixes early wakeup by RTC from STOP sleep mode [#1803](https://github.com/particle-iot/device-os/pull/1803)
+
+### INTERNAL
+
+- Adjusts on-device tests [#1898](https://github.com/particle-iot/device-os/pull/1898)
+- Add coverage to CMake unit-tests [#1860](https://github.com/particle-iot/device-os/pull/1860)
+- Pull test implementation out of source file [#1867](https://github.com/particle-iot/device-os/pull/1867)
+- [gen 3] Changes WKP pin to A7 for SoM platforms to avoid an overlap with Ethernet chip on EVB ESPEN mode to `OUTPUT_OPEN_DRAIN` [#1837](https://github.com/particle-iot/device-os/pull/1837)
+- [hal] Fixes WIFIEN pin mode for ASoM [#1889](https://github.com/particle-iot/device-os/pull/1889)
+- Refactor/move catch test [#1869](https://github.com/particle-iot/device-os/pull/1869)
+- fixes to communications public interface [#1863](https://github.com/particle-iot/device-os/pull/1863)
+- Refactors platform pinmap to be in platform-specific headers [#1838](https://github.com/particle-iot/device-os/pull/1838)
+- Improve compatibility with recent versions of GCC [#1806](https://github.com/particle-iot/device-os/pull/1806)
+- Set path to Boost libraries [#1872](https://github.com/particle-iot/device-os/pull/1872)
+- [docs] Updates `spark_publish_vitals` and build scripts documentation. [#1800](https://github.com/particle-iot/device-os/pull/1800)
+- [docs] update the test documentation [#1683](https://github.com/particle-iot/device-os/pull/1683)
+
+## 1.3.1-rc.1
+
+>**Note:** If your Gen 2 device does not have a Cloud connection, it is recommended to update system firmware, and then the bootloader via CLI with `particle flash --serial bootloader.bin` (bootloaders found in Github release).  Gen 3 devices should not need an updated bootloader this release.
+>
+>This release contains v400 bootloaders.
+
+### FEATURES
+
+- [gen 3] Nordic SoftDevice update support [#1816](https://github.com/particle-iot/device-os/pull/1816)
+- [gen 3] API for selecting BLE antenna for BLE radio [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] API for setting/getting BLE device name [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] API for setting BLE device address [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] API for manually discovering peer device's BLE services and characteristics [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] API for fetching discovered peer's services and characteristics [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] API in BlePeerDevice for establishing BLE connection without scanning required [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] API for manually subscribing/unsubscribing peer characteristic's notification [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] API for disconnecting all on-going BLE connections [#1847](https://github.com/particle-iot/device-os/pull/1847)
+
+### ENHANCEMENTS
+
+- [Boron/BSoM] power: Increases charging current to 900mA when powered through VIN (VUSB) pin [#1846](https://github.com/particle-iot/device-os/pull/1846)
+- Cancel network connection when processing a USB request that resets the device [#1830](https://github.com/particle-iot/device-os/pull/1830)
+- Particle.connected() should return true only after handshake messages are acknowledged [#1825](https://github.com/particle-iot/device-os/pull/1825)
+- [gen 3] USB state tracking enhancements [#1871](https://github.com/particle-iot/device-os/pull/1871)
+- [gen 3] Adds timeouts to I2C HAL operations [#1875](https://github.com/particle-iot/device-os/pull/1875)
+- [gen 3] Refactors BLE event dispatching [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] Decreases BLE runtime RAM consumption [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] Supports up to 23 local characteristics, 20 of them are available for user application [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] Supports up to 3 central links [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] More convenient methods provided in BleUuid class [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- ensures AT interface is responsive [#1886](https://github.com/particle-iot/device-os/pull/1886)
+
+### BUG FIXES
+
+- fixes RSSI regression on G350 (2G) devices [#1841](https://github.com/particle-iot/device-os/pull/1841)
+- [electron, gen3] Temporarily increase IDLE task priority whenever a thread exits (calls vTaskDelete) to resolve a memory leak that resulted in device being stuck "blinking green" until reset in some cases. [#1862](https://github.com/particle-iot/device-os/pull/1862)
+- [gen 3] Fixes mesh pub/sub socket consuming all packet buffers [#1839](https://github.com/particle-iot/device-os/pull/1839)
+- [Photon/P1] Bootloader correctly re-imports the DCT functions from system firmware after its modification through DFU [#1868](https://github.com/particle-iot/device-os/pull/1868)
+- [gen 3] `Mesh.off()` disconnects the cloud. Resolves an issue with `loop()` not being executed in `SEMI_AUTOMATIC` mode after `Mesh.off()` [#1857](https://github.com/particle-iot/device-os/pull/1857)
+- [Argon] Fixes the issue being unable to reset the device through RST pin by changing the ESPEN mode to `OUTPUT_OPEN_DRAIN` [#1870](https://github.com/particle-iot/device-os/pull/1870)
+- [Electron/LTE] devices drop Cloud connection every time user firmware opens and closes a TCP socket [ch34976]() [#1854](https://github.com/particle-iot/device-os/pull/1854)
+- [gen 2] Fixes an issue with clock stretching in I2C slave mode with underrun reads with certain I2C masters (e.g. Gen 3 devices) [#1829](https://github.com/particle-iot/device-os/pull/1829)
+- Fix to ensure device resets after bootloader update [#1873](https://github.com/particle-iot/device-os/pull/1873)
+- Fixes boot issue for Core introduced in 1.2.1-rc.3 [#1873](https://github.com/particle-iot/device-os/pull/1873)
+- [gen 3] Resolved a HardFault after USB cable is unplugged under certain conditions [#1871](https://github.com/particle-iot/device-os/pull/1871)
+- [gen 3] BLE advertising parameters didn't apply, issue #1874 [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] BLE scanning parameters didn't apply, issue #1859 and #1855 [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] Local characteristic notification causes SOS: [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gen 3] BLE address order reversed [#1847](https://github.com/particle-iot/device-os/pull/1847)
+- [gcc] fixes virtual platform exception on startup [#1878](https://github.com/particle-iot/device-os/pull/1878)
+
+### INTERNAL
+
+- Add coverage to CMake unit-tests [#1860](https://github.com/particle-iot/device-os/pull/1860)
+- Pull test implementation out of source file [#1867](https://github.com/particle-iot/device-os/pull/1867)
+- [gen 3] Changes WKP pin to A7 for SoM platforms to avoid an overlap with Ethernet chip on EVB ESPEN mode to `OUTPUT_OPEN_DRAIN` [#1837](https://github.com/particle-iot/device-os/pull/1837)
+- [hal] Fixes WIFIEN pin mode for ASoM [#1889](https://github.com/particle-iot/device-os/pull/1889)
+- Refactor/move catch test [#1869](https://github.com/particle-iot/device-os/pull/1869)
+- fixes to communications public interface [#1863](https://github.com/particle-iot/device-os/pull/1863)
+- Refactors platform pinmap to be in platform-specific headers [#1838](https://github.com/particle-iot/device-os/pull/1838)
+- Improve compatibility with recent versions of GCC [#1806](https://github.com/particle-iot/device-os/pull/1806)
+- Set path to Boost libraries [#1872](https://github.com/particle-iot/device-os/pull/1872)
+
+## 1.3.0-rc.1
+
+>**Note:** If your Gen 3 device does not have a Cloud connection, it is recommended to update system firmware, and then the bootloader via CLI with `particle flash --serial bootloader.bin` (bootloaders found in Github release)
+>
+>This release contains v311 bootloaders.
+
+### FEATURES
+
+- [gen 3] BLE support [#1740](https://github.com/particle-iot/device-os/pull/1740)
+- [gen 3] NFC support [#1606](https://github.com/particle-iot/device-os/pull/1606)
+
+### ENHANCEMENTS
+
+- [enhancement] Cache cellular diagnostics [#1810](https://github.com/particle-iot/device-os/pull/1810)
+- [enhancement] allow the bootloader to be flashed over DFU [#1788](https://github.com/particle-iot/device-os/pull/1788)
+
+### BUG FIXES
+
+- Add two-digit mnc diagnostic flag [#1804](https://github.com/particle-iot/device-os/pull/1807)
+- BLE fixes from 1.3.0-alpha.1 [#1817](https://github.com/particle-iot/device-os/pull/1817)
+- NFC Context parameter is missing and NFC.update() will remove callback, fixes from 1.3.0-alpha.1 [#1818](https://github.com/particle-iot/device-os/pull/1818)
+- [lte] cellular fixes [#1824](https://github.com/particle-iot/device-os/pull/1824)
+- fixes #1811 - increases the number of event handlers to 6 [#1822](https://github.com/particle-iot/device-os/pull/1822)
+- [gen 3] fixes memory usage diagnostics (reported negative values in safe mode) [#1819](https://github.com/particle-iot/device-os/pull/1819)
+- System.disableUpdates() operates asynchronously [#1801](https://github.com/particle-iot/device-os/pull/1801)
+- [gen 3] [bsom] Building platform BSOM results flash overflow. [#1802](https://github.com/particle-iot/device-os/pull/1802)
+- [gen 3] [hal] fixes early wakeup by RTC from STOP sleep mode [#1803](https://github.com/particle-iot/device-os/pull/1803)
+
+### INTERNAL
+
+- [docs] Updates `spark_publish_vitals` and build scripts documentation. [#1800](https://github.com/particle-iot/device-os/pull/1800)
+- [docs] update the test documentation [#1683](https://github.com/particle-iot/device-os/pull/1683)
+
+## 1.3.0-alpha.1
+
+>**Note:** If your Gen 3 device does not have a Cloud connection, it is recommended to update system firmware, and then the bootloader via CLI with `particle flash --serial bootloader.bin` (bootloaders found in Github release)
+>
+>This release contains v311 bootloaders.
+
+### FEATURES
+
+- [gen 3] BLE support [#1740](https://github.com/particle-iot/device-os/pull/1740)
+- [gen 3] NFC support [#1606](https://github.com/particle-iot/device-os/pull/1606)
+
+### BUG FIXES
+
+- [gen 3] [bsom] Building platform BSOM results flash overflow. [#1802](https://github.com/particle-iot/device-os/pull/1802)
+- [gen3] [hal] fixes early wakeup by RTC from STOP sleep mode [#1803](https://github.com/particle-iot/device-os/pull/1803)
+
+## 1.2.1
+
+>**Note:** If your Gen 2 Photon/P1 or Gen 3 device does not have a Cloud connection, it is recommended to update system firmware via CLI with `particle update`.  Electron bootloaders are still contained in system firmware and will update automatically as needed.
+>
+>This release contains v311 bootloaders.
+
+### FEATURES
+
+- [Enterprise] Immediate Product Firmware Updates [#1732](https://github.com/particle-iot/device-os/pull/1732)
+- On-demand Device Vitals publishing [#1724](https://github.com/particle-iot/device-os/pull/1724)
+
+### ENHANCEMENTS
+
+- Cache cellular diagnostics [#1820](https://github.com/particle-iot/device-os/pull/1820)
+- allow the bootloader to be flashed over DFU [#1788](https://github.com/particle-iot/device-os/pull/1788)
+- [gen 3] Upgrades Nordic nRF5 SDK to 15.3.0 [#1768](https://github.com/particle-iot/device-os/pull/1768)
+- [gen 3] Update error codes in Gen3 parser to facilitate debugging efforts and provide context to system errors [#1766](https://github.com/particle-iot/device-os/pull/1766)
+- [gen 3] Remove bootloader machine code string from system-part1 on Gen3 platforms.  Bootloader will require local update with `particle flash --serial bootloader.bin` or OTA update from the Cloud. [#1771](https://github.com/particle-iot/device-os/pull/1771)
+- Updates C++ and C standard versions (C++14 and C11) [#1757](https://github.com/particle-iot/device-os/pull/1757)
+- [gen 3] Always check ongoing RX DMA transaction when reporting number of bytes available in RX buffer [#1758](https://github.com/particle-iot/device-os/pull/1758)
+- Introduce safety checks on heap usage from ISRs [#1761](https://github.com/particle-iot/device-os/pull/1761)
+- [gen 3] Mesh network scan enhancements [#1760](https://github.com/particle-iot/device-os/pull/1760)
+- expires a session after 3 unsuccessful attempts at connecting to the cloud [#1776](https://github.com/particle-iot/device-os/pull/1776)
+- Integrate cellular network vitals data into `DESCRIBE_x` message [#1759](https://github.com/particle-iot/device-os/pull/1759)
+- [gen 2] adds Kore Vodafone SIM support & removes Twilio SIM support (still supported through 3rd party API) [ch31955] [#1780](https://github.com/particle-iot/device-os/pull/1780)
+- Reserve memory for system-part1 SRAM [#1742](https://github.com/particle-iot/device-os/pull/1742)
+
+### BUGFIXES
+
+- fixes RSSI regression on G350 (2G) devices [#1848](https://github.com/particle-iot/device-os/pull/1848)
+- Add two-digit mnc diagnostic flag [#1804](https://github.com/particle-iot/device-os/pull/1804)
+- [lte] cellular fixes [#1824](https://github.com/particle-iot/device-os/pull/1824)
+- fixes #1811 - increases the number of event handlers to 6 [#1822](https://github.com/particle-iot/device-os/pull/1822)
+- [gen 3] fixes memory usage diagnostics (reported negative values in safe mode) [#1819](https://github.com/particle-iot/device-os/pull/1819)
+- System.disableUpdates() operates asynchronously [#1801](https://github.com/particle-iot/device-os/pull/1801)
+- [gen 3] Fixes radio initialization sequence for SoftDevice S140v6.1.1 [#1794](https://github.com/particle-iot/device-os/pull/1794)
+- [gen 2] Fix ABI compatibility issue in cellular HAL regarding `CellularDevice` and `cellular_device_info()` [#1792](https://github.com/particle-iot/device-os/pull/1792)
+- [gen 3] [bootloader] fixes SOS 10 when upgrading bootloader first from older system firmware.  External flash sleep refactoring [#1799](https://github.com/particle-iot/device-os/pull/1799)
+- [system] network manager: allows to clear interface-specific credentials notwithstanding interface state, except for Mesh [#1773](https://github.com/particle-iot/device-os/pull/1773)
+- [gen 3] pinMode fixes, D7 was initialized as OUTPUT mode, `analogWrite()` and `digitalWrite()` were changing pinMode back to default after use [#1777](https://github.com/particle-iot/device-os/pull/1777)
+- [gen 3] Mesh network scan fixes [#1760](https://github.com/particle-iot/device-os/pull/1760)
+- Wait for confirmable messages when entering the deep sleep mode [#1767](https://github.com/particle-iot/device-os/pull/1767)
+- [gen 1] Fixes Spark Core function calls broken in 0.8.0-rc.4 [ch32050] [#1770](https://github.com/particle-iot/device-os/pull/1770)
+- [Electron/LTE] disables all eDRX AcT types [ch32051] [#1762](https://github.com/particle-iot/device-os/pull/1762)
+- [Electron/LTE] Make sure that the RAT information is actual before calculating signal strength (RSSI) and quality [#1779](https://github.com/particle-iot/device-os/pull/1779)
+- intelligent update flags synchronization [#1784](https://github.com/particle-iot/device-os/pull/1784)
+- [gen 3] Fixes various issues caused by the gateway reset [#1778](https://github.com/particle-iot/device-os/pull/1778)
+- [Photon/P1] Fixes MAC address info not being available in listening mode [#1783](https://github.com/particle-iot/device-os/pull/1783)
+- [wiring] Make sure that `Serial` and `SerialX` methods are in sync with the documentation and don't return unexpected values [#1782](https://github.com/particle-iot/device-os/pull/1782)
+- [gen3] Fixes a HeapError panic due to malloc() call from an ISR (caused by rand() usage) [#1786](https://github.com/particle-iot/device-os/pull/1786)
+- [gen3] Fixes HAL_USB_USART_Send_Data() returning incorrect values [#1787](https://github.com/particle-iot/device-os/pull/1787)
+
+## 1.2.1-rc.3
+
+>**Note:** If your Gen 3 device does not have a Cloud connection, it is recommended to update system firmware, and then the bootloader via CLI with `particle flash --serial bootloader.bin` (bootloaders found in Github release)
+>
+>This release contains v311 bootloaders.
+
+### ENHANCEMENTS
+
+- Cache cellular diagnostics [#1820](https://github.com/particle-iot/device-os/pull/1820)
+- allow the bootloader to be flashed over DFU [#1788](https://github.com/particle-iot/device-os/pull/1788)
+
+### BUG FIXES
+
+- Add two-digit mnc diagnostic flag [#1804](https://github.com/particle-iot/device-os/pull/1804)
+- [lte] cellular fixes [#1824](https://github.com/particle-iot/device-os/pull/1824)
+- fixes #1811 - increases the number of event handlers to 6 [#1822](https://github.com/particle-iot/device-os/pull/1822)
+- [gen 3] fixes memory usage diagnostics (reported negative values in safe mode) [#1819](https://github.com/particle-iot/device-os/pull/1819)
+- System.disableUpdates() operates asynchronously [#1801](https://github.com/particle-iot/device-os/pull/1801)
+
+## 1.2.1-rc.2
+
+>**Note:** If your Gen 3 device does not have a Cloud connection, it is recommended to update system firmware, and then the bootloader via CLI with `particle flash --serial bootloader.bin` (bootloaders found in Github release)
+>
+>This release contains v311 bootloaders (bumped this release due to Gen 3 changes in [#1799](https://github.com/particle-iot/device-os/pull/1799) ). We have also separated BOOTLOADER_DEPENDENCY for Gen 2 and Gen 3. For now, we will leave Gen 2 as is depending on v201 bootloader (so there is nothing to do for Gen 2 (Photon/P1 only) unless you want the latest bootloader, although it is not mandatory), but we have bumped Gen 3 to v311 because we have removed the embedded bootloaders from Gen 3 system firmware in 1.2.0-rc.1. To force the Cloud update for Gen 2 (Photon/P1 only) we will bump the bootloader dependency version to v302 in v1.2.0 default.
+
+### BUG FIXES
+
+- [gen 3] Fixes radio initialization sequence for SoftDevice S140v6.1.1 [#1794](https://github.com/particle-iot/device-os/pull/1794)
+- [gen 2] Fix ABI compatibility issue in cellular HAL regarding `CellularDevice` and `cellular_device_info()` [#1792](https://github.com/particle-iot/device-os/pull/1792)
+- [gen 3] [bootloader] fixes SOS 10 when upgrading bootloader first from older system firmware.  External flash sleep refactoring [#1799](https://github.com/particle-iot/device-os/pull/1799)
+
+## 1.2.1-rc.1
+
+>**Note:** If your Gen 3 device does not have a Cloud connection, it is recommended to update system firmware, and then the bootloader via CLI with `particle flash --serial bootloader.bin` (bootloaders found in Github release)
+>
+>This release contains v310 bootloaders (bumped this release due to Gen 3 changes in [#1768](https://github.com/particle-iot/device-os/pull/1768) ). We have also separated BOOTLOADER_DEPENDENCY for Gen 2 and Gen 3. For now, we will leave Gen 2 as is depending on v201 bootloader (so there is nothing to do for Gen 2 (Photon/P1 only) unless you want the latest bootloader, although it is not mandatory), but we have bumped Gen 3 to v302 because also in this release we have removed the embedded bootloaders from Gen 3 system firmware. To force the Cloud update for Gen 2 (Photon/P1 only) we will bump the bootloader dependency version to v302 in v1.2.0 default.
+
+### ENHANCEMENTS
+
+- [gen3] Upgrades Nordic nRF5 SDK to 15.3.0 [#1768](https://github.com/particle-iot/device-os/pull/1768)
+
+## 1.2.0-rc.1
+
+>**Note:** If your Gen 3 device does not have a Cloud connection, it is recommended to update system firmware, and then the bootloader via CLI with `particle flash --serial bootloader.bin` (bootloaders found in Github release)
+>
+>This release contains v302 bootloaders (bumped this release due to Gen 3 changes in [#1777](https://github.com/particle-iot/device-os/pull/1777) ). We have also separated BOOTLOADER_DEPENDENCY for Gen 2 and Gen 3. For now, we will leave Gen 2 as is depending on v201 bootloader (so there is nothing to do for Gen 2 (Photon/P1 only) unless you want the latest bootloader, although it is not mandatory), but we have bumped Gen 3 to v302 because also in this release we have removed the embedded bootloaders from Gen 3 system firmware. To force the Cloud update for Gen 2 (Photon/P1 only) we will bump the bootloader dependency version to v302 in v1.2.0 default.
+
+### FEATURES
+
+- [Enterprise] Immediate Product Firmware Updates [#1732](https://github.com/particle-iot/device-os/pull/1732)
+- On-demand Device Vitals publishing [#1724](https://github.com/particle-iot/device-os/pull/1724)
+
+### ENHANCEMENTS
+
+- [gen 3] Update error codes in Gen3 parser to facilitate debugging efforts and provide context to system errors [#1766](https://github.com/particle-iot/device-os/pull/1766)
+- [gen 3] Remove bootloader machine code string from system-part1 on Gen3 platforms.  Bootloader will require local update with `particle flash --serial bootloader.bin` or OTA update from the Cloud. [#1771](https://github.com/particle-iot/device-os/pull/1771)
+- Updates C++ and C standard versions (C++14 and C11) [#1757](https://github.com/particle-iot/device-os/pull/1757)
+- [gen 3] Always check ongoing RX DMA transaction when reporting number of bytes available in RX buffer [#1758](https://github.com/particle-iot/device-os/pull/1758)
+- Introduce safety checks on heap usage from ISRs [#1761](https://github.com/particle-iot/device-os/pull/1761)
+- [gen 3] Mesh network scan enhancements [#1760](https://github.com/particle-iot/device-os/pull/1760)
+- expires a session after 3 unsuccessful attempts at connecting to the cloud [#1776](https://github.com/particle-iot/device-os/pull/1776)
+- Integrate cellular network vitals data into `DESCRIBE_x` message [#1759](https://github.com/particle-iot/device-os/pull/1759)
+- [gen 2] adds Kore Vodafone SIM support & removes Twilio SIM support (still supported through 3rd party API) [ch31955] [#1780](https://github.com/particle-iot/device-os/pull/1780)
+- Reserve memory for system-part1 SRAM [#1742](https://github.com/particle-iot/device-os/pull/1742)
+
+### BUGFIXES
+
+- [system] network manager: allows to clear interface-specific credentials notwithstanding interface state, except for Mesh [#1773](https://github.com/particle-iot/device-os/pull/1773)
+- [gen 3] pinMode fixes, D7 was initialized as OUTPUT mode, `analogWrite()` and `digitalWrite()` were changing pinMode back to default after use [#1777](https://github.com/particle-iot/device-os/pull/1777)
+- [gen 3] Mesh network scan fixes [#1760](https://github.com/particle-iot/device-os/pull/1760)
+- Wait for confirmable messages when entering the deep sleep mode [#1767](https://github.com/particle-iot/device-os/pull/1767)
+- [gen 1] Fixes Spark Core function calls broken in 0.8.0-rc.4 [ch32050] [#1770](https://github.com/particle-iot/device-os/pull/1770)
+- [Electron/LTE] disables all eDRX AcT types [ch32051] [#1762](https://github.com/particle-iot/device-os/pull/1762)
+- [Electron/LTE] Make sure that the RAT information is actual before calculating signal strength (RSSI) and quality [#1779](https://github.com/particle-iot/device-os/pull/1779)
+- intelligent update flags synchronization [#1784](https://github.com/particle-iot/device-os/pull/1784)
+- [gen 3] Fixes various issues caused by the gateway reset [#1778](https://github.com/particle-iot/device-os/pull/1778)
+- [Photon/P1] Fixes MAC address info not being available in listening mode [#1783](https://github.com/particle-iot/device-os/pull/1783)
+- [wiring] Make sure that `Serial` and `SerialX` methods are in sync with the documentation and don't return unexpected values [#1782](https://github.com/particle-iot/device-os/pull/1782)
+- [gen3] Fixes a HeapError panic due to malloc() call from an ISR (caused by rand() usage) [#1786](https://github.com/particle-iot/device-os/pull/1786)
+- [gen3] Fixes HAL_USB_USART_Send_Data() returning incorrect values [#1787](https://github.com/particle-iot/device-os/pull/1787)
+
+### INTERNAL
+
+- [gen 3] update bootloader dependency to v302 [#1785](https://github.com/particle-iot/device-os/pull/1785)
+
+## 1.2.0-beta.1
+
+### FEATURES
+
+- [Enterprise] Immediate Product Firmware Updates [#1732](https://github.com/particle-iot/device-os/pull/1732)
+- [Enterprise] Device Vitals reporting [#1724](https://github.com/particle-iot/device-os/pull/1724)
+
+### INTERNAL
+
+- [test] fixes unit-tests for testing version string with pre-release [#1749](https://github.com/particle-iot/device-os/pull/1749)
+- [test] update upgrade-downgrade.sh to 1.2.0-beta.1 [#1749](https://github.com/particle-iot/device-os/pull/1749)
+
+## 1.2.0-alpha.1
+
+### FEATURES
+
+- [Enterprise] Immediate Product Firmware Updates [#1732](https://github.com/particle-iot/device-os/pull/1732)
+- [Enterprise] Device Vitals reporting [#1724](https://github.com/particle-iot/device-os/pull/1724)
+
+## 1.1.0
+
+### FEATURES
+
+- [gen 3] Argon, Boron, Xenon platform Device OS `mesh_develop` merged into `develop` [#1700](https://github.com/particle-iot/device-os/pull/1700)
+- [gen 3] Adds A SoM, B SoM and X SoM platforms (compile with PLATFORM=asom, PLATFORM=bsom, PLATFORM=xsom) to Device OS [#1662](https://github.com/particle-iot/device-os/pull/1662)
+- [som] Runtime power management IC detection [#1733](https://github.com/particle-iot/device-os/pull/1733)
+
+### ENHANCEMENTS
+
+- [photon/p1/electron] mbedTLS updated from v2.4.2 to v2.9.0 [#1700](https://github.com/particle-iot/device-os/pull/1700)
+- [electron/LTE] FreeRTOS updated from v8.2.2 to v10.0.1 [#1700](https://github.com/particle-iot/device-os/pull/1700)
+- [gen 2] Binary size optimizations [#1720](https://github.com/particle-iot/device-os/pull/1720)
+- Updates Tinker for all platforms [#1717](https://github.com/particle-iot/device-os/pull/1717)
+- [gen 3] Adds button and RGB LED mirroring support [#1590](https://github.com/particle-iot/device-os/pull/1590)
+- [bsom] Disables system power management [#1722](https://github.com/particle-iot/device-os/pull/1722)
+- [boron/LTE] Enable Cat M1-only mode and disable eDRX completely [#1723](https://github.com/particle-iot/device-os/pull/1723)
+- [gen 3] QSPI flash is put into sleep mode and is deinitialized when entering STANDBY or STOP sleep mode [1725](https://github.com/particle-iot/device-os/pull/1725)
+- [gen 3] Parameter check for SPI slave mode with HAL_SPI_INTERFACE1 [#1731](https://github.com/particle-iot/device-os/pull/1731)
+
+### BUGFIXES
+
+- [gen 3] [hal] Fixes USBSerial SOS issue when removing USB cable from battery powered device [#1707](https://github.com/particle-iot/device-os/pull/1707)
+- [gen 3] Fixes A5 staying high when using Ethernet feather wing [#1696](https://github.com/particle-iot/device-os/pull/1696)
+- [core] Disable system logs for Core to reduce flash space needed to build tests [#1713](https://github.com/particle-iot/device-os/pull/1713)
+- [wiring] Fixed a potential (but unlikely due to bounds checking) buffer overflow in time formatting function [#1712](https://github.com/particle-iot/device-os/pull/1712)
+- [electron] [G350] fixes Cellular.RSSI() issues due to unknown RAT [#1721](https://github.com/particle-iot/device-os/pull/1721)
+- [gen 3] Fixes a deadlock in `system_power_manager` and `i2c_hal` when exiting the sleep mode  [1725](https://github.com/particle-iot/device-os/pull/1725)
+- [gen 3] Fixes issues in USB and WCID descriptors preventing Control Interface from working correctly on Windows platforms [#1736](https://github.com/particle-iot/device-os/pull/1736)
+- [bootloader] SysTick needs to be disabled in Reset_System() on Gen 2 platforms [#1741](https://github.com/particle-iot/device-os/pull/1741)
+- [boron] Workaround for SARA R4 ppp session getting broken and system power manager fix [#1726](https://github.com/particle-iot/device-os/pull/1726)
+- Fixes system power manager re-enabling charging every 1s with a battery connected (now every 60s) [#1726](https://github.com/particle-iot/device-os/pull/1726)
+- [photon/p1] Fixes 802.11n-only mode regression in 0.7.0 ~ 1.1.0-rc.1 [#1755](https://github.com/particle-iot/device-os/pull/1755)
+- [gen 3] Updates embedded bootloader, fixes hardfault after hard reset when sleeping [#1756](https://github.com/particle-iot/device-os/pull/1756)
+
+### INTERNAL
+
+- Update release.sh parameter handling [#1690](https://github.com/particle-iot/device-os/pull/1690)
+- Adds missing Device OS release tests [#1698](https://github.com/particle-iot/device-os/pull/1698)
+- [gen 3] Fixes TEST=wiring/no_fixture [#1694](https://github.com/particle-iot/device-os/pull/1694)
+- [gen 3] Add Gen 3 platforms to Device OS build scripts [#1714](https://github.com/particle-iot/device-os/pull/1714)
+- [docs] Fix `brew install gcc-arm-none-eabi-53` formula [#1708](https://github.com/particle-iot/device-os/pull/1708)
+- [docs] Fixes recent merge issues with `system-versions.md` [#1715](https://github.com/particle-iot/device-os/pull/1715)
+- [ci] Build time optimizations [#1712](https://github.com/particle-iot/device-os/pull/1712)
+- [ci] disables shallow submodule checkouts [#1735](https://github.com/particle-iot/device-os/pull/1735)
+- [docs] for the check and scope guard macros [#1734](https://github.com/particle-iot/device-os/pull/1734)
+- [hal] Correct ADC channel number for SoM [#1739](https://github.com/particle-iot/device-os/pull/1739)
+- [photon/p1] crypto: re-enables MD5 for TLS (WPA Enterprise) [#1743](https://github.com/particle-iot/device-os/pull/1743)
+- [gen 3] Fix/wiring tests [#1719](https://github.com/particle-iot/device-os/pull/1719)
+- Remove the message "External flash is not supported" from Gen 3 builds [#1751](https://github.com/particle-iot/device-os/pull/1751)
+- Do not fail the build if PARTICLE_DEVELOP is not defined [#1750](https://github.com/particle-iot/device-os/pull/1750)
+- [gen 3] Fixes a build system issue that caused object files to be created outside build directory [#1754](https://github.com/particle-iot/device-os/pull/1754)
+- [gen 3] Rename SoM platform names `[ch32184]` [#1774](https://github.com/particle-iot/device-os/pull/1774)
+
+## 1.1.0-rc.2
+
+### BUGFIXES
+
+- [photon/p1] Fixes 802.11n-only mode regression in 0.7.0 ~ 1.1.0-rc.1 [#1755](https://github.com/particle-iot/device-os/pull/1755)
+- [gen 3] Updates embedded bootloader, fixes hardfault after hard reset when sleeping [#1756](https://github.com/particle-iot/device-os/pull/1756)
+
+### INTERNAL
+
+- Remove the message "External flash is not supported" from Gen 3 builds [#1751](https://github.com/particle-iot/device-os/pull/1751)
+- Do not fail the build if PARTICLE_DEVELOP is not defined [#1750](https://github.com/particle-iot/device-os/pull/1750)
+- [gen 3] Fixes a build system issue that caused object files to be created outside build directory [#1754](https://github.com/particle-iot/device-os/pull/1754)
+
+## 1.1.0-rc.1
+
+### FEATURES
+
+- [gen 3] Argon, Boron, Xenon platform Device OS `mesh_develop` merged into `develop` [#1700](https://github.com/particle-iot/device-os/pull/1700)
+- [gen 3] Adds A SoM, B SoM and X SoM platforms (compile with PLATFORM=asom, PLATFORM=bsom, PLATFORM=xsom) to Device OS [#1662](https://github.com/particle-iot/device-os/pull/1662)
+- [som] Runtime power management IC detection [#1733](https://github.com/particle-iot/device-os/pull/1733)
+
+### ENHANCEMENTS
+
+- [photon/p1/electron] mbedTLS updated from v2.4.2 to v2.9.0 [#1700](https://github.com/particle-iot/device-os/pull/1700)
+- [electron/LTE] FreeRTOS updated from v8.2.2 to v10.0.1 [#1700](https://github.com/particle-iot/device-os/pull/1700)
+- [gen 2] Binary size optimizations [#1720](https://github.com/particle-iot/device-os/pull/1720)
+- Updates Tinker for all platforms [#1717](https://github.com/particle-iot/device-os/pull/1717)
+- [gen 3] Adds button and RGB LED mirroring support [#1590](https://github.com/particle-iot/device-os/pull/1590)
+- [bsom] Disables system power management [#1722](https://github.com/particle-iot/device-os/pull/1722)
+- [boron/LTE] Enable Cat M1-only mode and disable eDRX completely [#1723](https://github.com/particle-iot/device-os/pull/1723)
+- [gen 3] QSPI flash is put into sleep mode and is deinitialized when entering STANDBY or STOP sleep mode [1725](https://github.com/particle-iot/device-os/pull/1725)
+- [gen 3] Parameter check for SPI slave mode with HAL_SPI_INTERFACE1 [#1731](https://github.com/particle-iot/device-os/pull/1731)
+
+### BUGFIXES
+
+- [gen 3] [hal] Fixes USBSerial SOS issue when removing USB cable from battery powered device [#1707](https://github.com/particle-iot/device-os/pull/1707)
+- [gen 3] Fixes A5 staying high when using Ethernet feather wing [#1696](https://github.com/particle-iot/device-os/pull/1696)
+- [core] Disable system logs for Core to reduce flash space needed to build tests [#1713](https://github.com/particle-iot/device-os/pull/1713)
+- [wiring] Fixed a potential (but unlikely due to bounds checking) buffer overflow in time formatting function [#1712](https://github.com/particle-iot/device-os/pull/1712)
+- [electron] [G350] fixes Cellular.RSSI() issues due to unknown RAT [#1721](https://github.com/particle-iot/device-os/pull/1721)
+- [gen 3] Fixes a deadlock in `system_power_manager` and `i2c_hal` when exiting the sleep mode  [1725](https://github.com/particle-iot/device-os/pull/1725)
+- [gen 3] Fixes issues in USB and WCID descriptors preventing Control Interface from working correctly on Windows platforms [#1736](https://github.com/particle-iot/device-os/pull/1736)
+- [bootloader] SysTick needs to be disabled in Reset_System() on Gen 2 platforms [#1741](https://github.com/particle-iot/device-os/pull/1741)
+- [boron] Workaround for SARA R4 ppp session getting broken and system power manager fix [#1726](https://github.com/particle-iot/device-os/pull/1726)
+- Fixes system power manager re-enabling charging every 1s with a battery connected (now every 60s) [#1726](https://github.com/particle-iot/device-os/pull/1726)
+
+### INTERNAL
+
+- Update release.sh parameter handling [#1690](https://github.com/particle-iot/device-os/pull/1690)
+- Adds missing Device OS release tests [#1698](https://github.com/particle-iot/device-os/pull/1698)
+- [gen 3] Fixes TEST=wiring/no_fixture [#1694](https://github.com/particle-iot/device-os/pull/1694)
+- [gen 3] Add Gen 3 platforms to Device OS build scripts [#1714](https://github.com/particle-iot/device-os/pull/1714)
+- [docs] Fix `brew install gcc-arm-none-eabi-53` formula [#1708](https://github.com/particle-iot/device-os/pull/1708)
+- [docs] Fixes recent merge issues with `system-versions.md` [#1715](https://github.com/particle-iot/device-os/pull/1715)
+- [ci] Build time optimizations [#1712](https://github.com/particle-iot/device-os/pull/1712)
+- [ci] disables shallow submodule checkouts [#1735](https://github.com/particle-iot/device-os/pull/1735)
+- [docs] for the check and scope guard macros [#1734](https://github.com/particle-iot/device-os/pull/1734)
+- [hal] Correct ADC channel number for SoM [#1739](https://github.com/particle-iot/device-os/pull/1739)
+- [photon/p1] crypto: re-enables MD5 for TLS (WPA Enterprise) [#1743](https://github.com/particle-iot/device-os/pull/1743)
+- [gen 3] Fix/wiring tests [#1719](https://github.com/particle-iot/device-os/pull/1719)
+
+## 1.0.1
+
+### BUGFIXES
+
+- [LTE/Electron] Fixes software Timer()'s halting after millis() overflows (every 49.7 days) [#1688](https://github.com/particle-iot/device-os/pull/1688)
+- [LTE/Electron] bug fixes and enhancements (see PR ->) [#1689](https://github.com/particle-iot/device-os/pull/1689)
+
+### INTERNAL
+
+- Fix Travis badge [#1670](https://github.com/particle-iot/device-os/pull/1670)
+- Mojave doesn't ship with `wget` [#1674](https://github.com/particle-iot/device-os/pull/1674)
+- Bypass git dependency in build [#1664](https://github.com/particle-iot/device-os/pull/1664)
+- Refactor release scripts [#1687](https://github.com/particle-iot/device-os/pull/1687)
+
+## 1.0.1-rc.1
+
+### BUGFIXES
+
+- [LTE/Electron] Fixes software Timer()'s halting after millis() overflows (every 49.7 days) [#1688](https://github.com/particle-iot/device-os/pull/1688)
+- [LTE/Electron] bug fixes and enhancements (see PR ->) [#1689](https://github.com/particle-iot/device-os/pull/1689)
+
+### INTERNAL
+
+- Fix Travis badge [#1670](https://github.com/particle-iot/device-os/pull/1670)
+- Mojave doesn't ship with `wget` [#1674](https://github.com/particle-iot/device-os/pull/1674)
+- Bypass git dependency in build [#1664](https://github.com/particle-iot/device-os/pull/1664)
+- Refactor release scripts [#1687](https://github.com/particle-iot/device-os/pull/1687)
+
+## 1.0.0
+
+### BREAKING CHANGES
+
+- Beginning with 1.0.0 release, Particle.publish() and Particle.subscribe() methods will require event scope to be specified explicitly. This means using `PRIVATE` or `PUBLIC` for `Particle.publish()` and `MY_DEVICES` or `ALL_DEVICES` for `Particle.subscribe()`.  Please update your apps to include the event scope to avoid compilation errors in firmware `>0.7.0`. Deprecation warnings for this change began with `0.7.0-rc.3` [#1365](https://github.com/spark/firmware/pull/1365)
+- [Core/Photon/P1] `WiFi.RSSI()` must be cast to `int8_t` when used inline with Serial.print() to produce correct results.  E.g. `Serial.printlnf("%d", (int8_t) WiFi.RSSI() );` Electron is not affected. [#1423](https://github.com/particle-iot/firmware/pull/1423)
+
+### FEATURES
+
+- Diagnostics service [#1390](https://github.com/spark/firmware/pull/1390)
+- Network and Cloud diagnostics [#1424](https://github.com/spark/firmware/pull/1424)
+- Diagnostics for unacked messages and rate limited events [#1391](https://github.com/spark/firmware/pull/1391)
+- System uptime diagnoatics [#1393](https://github.com/spark/firmware/pull/1393)
+- Network Signal Quality/Strength rework and diagnostics [#1423](https://github.com/spark/firmware/pull/1423)
+- RAM usage diagnostic sources data [#1411](https://github.com/spark/firmware/pull/1411)
+- Battery charge diagnostics [#1395](https://github.com/spark/firmware/pull/1395)
+- Battery State diagnostics [#1398](https://github.com/spark/firmware/pull/1398)
+- [Electron] Reworked power management [#1412](https://github.com/spark/firmware/pull/1412)
+- Low-latency interrupt handlers [#1394](https://github.com/spark/firmware/pull/1394)
+- [Electron] adds UPSV handling to cellular_hal [#1480](https://github.com/particle-iot/firmware/pull/1480)
+- [Photon/P1] TCPClient: non-blocking, blocking, blocking with timeout writes support [#1485](https://github.com/particle-iot/firmware/pull/1485)
+- Network and cloud diagnostics [#1424](https://github.com/particle-iot/firmware/pull/1424)
+- Out of heap system event and heap fragmentation detection [#1452](https://github.com/particle-iot/firmware/pull/1452)
+- USB request handlers [#1444](https://github.com/particle-iot/firmware/pull/1444)
+
+### ENHANCEMENTS
+
+- [Photon/P1] Moves Wi-Fi tester into application module [#1378](https://github.com/spark/firmware/pull/1378)
+- [Photon/P1] Wi-FI firmware compression [#1421](https://github.com/spark/firmware/pull/1421)
+- Only remake $(TARGET_BASE).elf el al. if necessary [#1223](https://github.com/particle-iot/firmware/pull/1223)
+- Use 'using std::\*\*' instead of define \* std::\* [#1258](https://github.com/particle-iot/firmware/pull/1258)
+- Added docs on local build setup [#1374](https://github.com/particle-iot/firmware/pull/1374)
+- Firmware update and access to internal flash via USB requests [#1456](https://github.com/particle-iot/firmware/pull/1456)
+- Generalize FuelGauge to also use alternative I2C interfaces. [#1443](https://github.com/particle-iot/firmware/pull/1443)
+- [Photon/P1] WiFi.dnsServerIP()/WiFi.dhcpServerIP() support [#1386](https://github.com/particle-iot/firmware/pull/1386)
+- [Photon/P1] Increase maximum supported number of simultaneously active TCP connections [#1350](https://github.com/particle-iot/firmware/pull/1350)
+- Disable WKP pin waking device up from `SLEEP_MODE_DEEP` [#1409](https://github.com/particle-iot/firmware/pull/1409)
+- System.sleep(): support for multiple wake up pins [#1405](https://github.com/particle-iot/firmware/pull/1405)
+- System.sleep() wake up reason [#1410](https://github.com/particle-iot/firmware/pull/1410)
+- Serialize access to the CRC peripheral (STM32F2xx) [#1465](https://github.com/particle-iot/firmware/pull/1465)
+- [Photon/P1] Enables support for SHA384/SHA512 certificates for WPA Enterprise [#1501](https://github.com/particle-iot/firmware/pull/1501)
+- [Photon/P1] A number of networking-related fixes v2 [#1500](https://github.com/particle-iot/firmware/pull/1500)
+- [Electron/Photon/P1] Increase Device OS API argument lengths. More data in Functions, Variables, Publish, Subscribe... oh my! [#1537](https://github.com/particle-iot/firmware/pull/1537)
+- [Electron] Adds support for SARA-R410 to the Cellular HAL [#1532](https://github.com/particle-iot/firmware/pull/1532)
+- [Electron/Photon/P1] Do not check and lock bootloader sector write protection on every boot [ch17416] [#1578](https://github.com/particle-iot/firmware/pull/1578)
+- [Photon/P1] Memory usage optimizations ([#1635](https://github.com/particle-iot/firmware/pull/1635))
+- [Electron/Photon/P1] Cache persistent feature flags ([#1640](https://github.com/particle-iot/firmware/pull/1640))
+
+### BUGFIXES
+
+- [Electron] Error handling in the data usage API [#1435](https://github.com/spark/firmware/pull/1435)
+- Cloud random seed not working [#1312](https://github.com/spark/firmware/issues/1312)
+- Fixed shadowing of write(const unint_8_t`*`, sizte_t) in USBKeyboard [#1372](https://github.com/particle-iot/firmware/pull/1372)
+- Fix usage of an incorrect prerequisite name in program-* targets [#1463](https://github.com/particle-iot/firmware/pull/1463)
+- [Virtual] Fixes virtual device running with UDP protocol [#1462](https://github.com/particle-iot/firmware/pull/1462)
+- [Core] Fixes I2C slave mode [#1309](https://github.com/particle-iot/firmware/pull/1309)
+- [Electron] moves some newlib functions into part1 [#1471](https://github.com/particle-iot/firmware/pull/1471)
+- [Electron] DCD fixes [#1454](https://github.com/particle-iot/firmware/pull/1454)
+- [Electron] connect_cancel() fix [#1464](https://github.com/particle-iot/firmware/pull/1464)
+- [Electron] Fix caching of the description CRCs in the backup RAM [#1413](https://github.com/particle-iot/firmware/pull/1413)
+- [Electron] Guard cellular_command() with a global lock [#1415](https://github.com/particle-iot/firmware/pull/1415)
+- [Electron] Fix heap bounds build for system part1 [#1478](https://github.com/particle-iot/firmware/pull/1478)
+- [Photon/P1/Electron] Recursive logging freezes the application thread while the LogHandler is trying to acquire a lock on the resource [#1517](https://github.com/particle-iot/firmware/pull/1517)
+- [Photon/Electron] WKP pin needs to be disabled as a wakeup source on boot to allow its normal operation [#1496](https://github.com/particle-iot/firmware/pull/1496)
+- [Photon/P1] A number of networking-related fixes v2 [#1500](https://github.com/particle-iot/firmware/pull/1500)
+- [Photon/P1] A number of networking-related fixes [#1492](https://github.com/particle-iot/firmware/pull/1492)
+- [Electron] Fixes missing URCs for received data during TX or RX socket operations. This caused the modem not to be able to receive further data properly until it re-connected to the Cloud which it would do automatically but usually after a short or longer period of time. [#1530](https://github.com/particle-iot/firmware/pull/1530)
+- [Electron] `Particle.keepAlive()` API was broken since v0.6.2-rc.2 firmware on Electron where the System would override an early set User ping interval.  This required a workaround of updating the keepAlive after the System made a connection to the Cloud.  See issue #1482 for workaround. [#1536](https://github.com/particle-iot/firmware/pull/1536)
+- [Electron] Bug fixes for SARA-R410 LTE E Series [#1547](https://github.com/particle-iot/firmware/pull/1547)
+- [Electron] Disables 30 second ping for Kore SIMs on SARA_R410 (default 23 minute ping re-applied)
+- [Electron/LTE] Fast OTA Fixes [#1558](https://github.com/particle-iot/firmware/pull/1558)
+- [Electron/LTE] eDRX & Power Saving mode disabled by default [#1567](https://github.com/particle-iot/firmware/pull/1567)
+- [Electron/Photon/P1] Fixes recursive semaphore lock timeout [ch21928] [#1577](https://github.com/particle-iot/firmware/pull/1577)
+- [Electron/LTE] adds 1 retry for UDP/TCP socket send in case of error [ch18789] [#1576](https://github.com/particle-iot/firmware/pull/1576)
+- [Photon/P1] Invalidate sockets when turning WiFi off ([#1639](https://github.com/particle-iot/firmware/pull/1639))
+- [Electron] Do not set the sticky skip hello after handshake ([#1624](https://github.com/particle-iot/firmware/pull/1624))
+- [Electron] `PMIC::getInputCurrentLimit()` cannot report values higher than 900mA ([#1581](https://github.com/particle-iot/firmware/pull/1581))
+- [Electron/LTE] AT+CNUM command causing registration failure on LTE devices ([#1627](https://github.com/particle-iot/firmware/pull/1627))
+- [Electron/LTE] Power Manager Watchdog Timer Fix ([#1581](https://github.com/particle-iot/firmware/pull/1581))
+- [Electron/Photon/P1] Wait for Wiring Thread to start ([#1528](https://github.com/particle-iot/firmware/pull/1528))
+- [Electron/Photon/P1] Do not disable interrupts on every system loop iteration ([#1622](https://github.com/particle-iot/firmware/pull/1622))
+- [Electron/Photon/P1] Fixes SOS in 0.8.0-rc.11 and also ensures button and OOM events are handled synchronously. Previously in multi-threaded applications the button handling may have been delayed to run within the application thread.  Now it is always handled immediately and should be noted that it is called from an ISR, so it is not advised to dynamically allocate memory in button event handlers. ([#1600](https://github.com/particle-iot/firmware/pull/1600)) ([#1650](https://github.com/particle-iot/firmware/pull/1650))
+- [Electron/LTE] Fixes unique stale socket issue with LTE devices ([#1666](https://github.com/particle-iot/firmware/pull/1666))
+
+### INTERNAL
+
+- Minor refactoring of the USB protocol implementation [#1473](https://github.com/particle-iot/firmware/pull/1473)
+- [Electron] Flash size optimizations [#1469](https://github.com/particle-iot/firmware/pull/1469)
+- Documents low level USB request completion notifications [#1475](https://github.com/particle-iot/firmware/pull/1475)
+- IS_CLAIMED request fixes [#1472](https://github.com/particle-iot/firmware/pull/1472)
+- fixes the unit test build [#1474](https://github.com/particle-iot/firmware/pull/1474)
+- Fixes some 0.8.0-rc.2 tests [#1476](https://github.com/particle-iot/firmware/pull/1476)
+- [Electron] fixes sticker-rig issue with POWER_ON command [#1544](https://github.com/particle-iot/firmware/pull/1544)
+- [Electron] Fixes monolithic build [#1543](https://github.com/particle-iot/firmware/pull/1543)
+
+## 0.9.0
+
+### BUGFIXES
+- [Gen 3] Fixes system-dynalib incompatibility introduced in 0.9.0-rc.1, causing pre-0.9.0-rc.1 user applications that call certain system-dynalib functions to crash the device [#1692]
+- [Gen 3] `WKP` pin is configured as pull-down with rising edge trigger when entering STANDBY sleep mode to keep feature parity with Gen 2 devices (#1691)
+- [Boron] PPP thread stack size increased by 1K in order to resolve a very rare stack overflow (#1691)
+- [Gen 3] Fixes a crash when attempting to send constant data residing in flash through Ethernet interface (#1691)
+- [Gen 3] An attempt to unitialize an SPI interface no longer causes an assertion failure if the interface is not initialized (#1663)
+- [Gen 3] Default SPI settings are now recognized correctly (#1663)
+- [Gen 3] Fixed a possible race condition during the Timer's uninitialization (#1663)
+- [Gen 3] `random()` is now properly seeded on application startup (#1663)
+- [Boron] Fixes an issue with IMEI and ICCID not being reported in listening mode serial console with `v` command (#1681)
+- [Gen 3] SPI MISO is no longer configured with a pull-down and user-provided CS pin is not reset to `INPUT` state when reconfiguring SPI peripheral (#1671)
+- [Argon] Fixes a deadlock when initializing NCP client (#1661)
+- [Gen 3] DFU mode no longer requires driver installation on Windows. Fixes incorrect WCID descriptors (#1653)
+- [Gen 3] Adds missing Arduino-specific definitions (#1658)
+- [Xenon] Makes `Serial2` available in user applications (#1660)
+- [Argon] WiFi cipher types are now being correctly reported when scanning or retreiving stored credentials (#1659)
+
+### ENHANCEMENTS
+- [Gen 3] `micros()` resolution increased by mixing in `DWT->CYCCNT` (#1682)
+
+### FEATURES
+- [Gen 3] STOP sleep mode support (#1682)
+- [Gen 3] STANDBY sleep mode support (#1667)
+- [Gen 3] USB control requests (#1655)
+- [Gen 3] Mesh network diagnostics (#1657)
+- [Boron] `Cellular.command()` support (#1651)
+
+### INTERNAL
+- [Gen 3] Most of the `wiring/no_fixture` tests now successfully run on Xenon, Argon and Boron (#1663)
+- Removed strong dependency on `git` (#1664)
+- [Gen 3] OpenThread updated to 20190130 master with the fix for negative clock drift between HFCLK and LFCLK (#1684)
+- Submodules now use absolute https URLs (#1699)
+- Fixed an assertion failure (SOS 10) with Mesh.subscribe() and threading enabled (#1652)
+
+## 0.8.0-rc.27
+
+### BUGFIXES
+- [Argon] Sucessful update of the NCP firmware no longer results in `SYSTEM_ERROR_INVALID_STATE` (#1645)
+- [Argon] `m` command in listening mode correctly reports WiFi MAC address (#1638)
+
+### ENHANCEMENTS
+- [Gen 3] Added newlib `__assert_func()` implementation that logs the assertion failure and delegates to `AssertionFailure` panic handler (#1636)
+- [Gen 3] OpenThread upgraded to 2018/12/17 master (#1643)
+- [Gen 3] Added a workaround for RTC / TIMER negative drift issue in Nordic 802.15.4 radio driver (#1643)
+- [Gen 3] Normalized (lowered) IRQ priorities to a safe 5-7 range (#1643)
+- [Gen 3] `timer_hal` and `rtc_hal` migrated to use a single stable monotonic 64-bit microsecond counter provided by OpenThread platform-specific code using the RTC peripheral (#1643)
+- [Gen 3] `HAL_disable_irq()` / `HAL_enable_irq()` implementation changed to use `__set_BASEPRI()` instead of `sd_nvic_critical_region_enter()` / `sd_nvic_critical_region_exit()` to avoid assertion failures in Nordic 802.15.4 radio driver
+- [Gen 3] Persistent border router prefix (#1647)
+- [Gen 3] Enables USB Serial by default (#1649)
+
+## 0.8.0-rc.26
+
+### BUGFIXES
+
+- [Argon] Escape special characters in SSIDs and passwords (#1604)
+- [Gen 3] Network system events are correctly generated (#1585)
+- [Gen 3] Correct C++ contructor array alignment in system-part1 (#1594)
+- [Gen 3] Fixed a conflict between DHCPv4-assigned and ND6-assigned DNS servers (#1596)
+- [Argon / Boron] Fixed a race condition when restarting the GSM07.10 multiplexer causing a memory leak/corruption (#1608)
+- [Gen 3] IPv4 `IPAddress` endianness issue fixed (#1610)
+- [Boron] Fixed a crash when using `STARTUP()` macro to manage Cellular credentials (#1613)
+- [Gen 3] Embedded user part update procedure fixed in for hybrid builds (#1617)
+- [communication] Sticky `SKIP_SESSION_RESUME_HELLO` no longer set immediately after session resume (#1623)
+- [Gen 3] OpenThread locking fixes (#1625)
+- [Gen 3] NetworkManager initiail state initialized in `network_setup()`
+- [Gen 3] IPv4 `IPAddress` endianness issue fixed (#1610)
+- [Gen 3] Fixes an assertion failure in LwIP DHCP code when receiving an offer with > 2 DNS servers (#1618)
+- [Argon / Xenon] `Wire1` enabled (#1633)
+
+### ENHANCEMENTS
+
+- [Boron] 3G Borons no longer incur 10 second power-on delay when cold booting (#1584)
+- [Gen 3] Build time significantly improved (#1587)
+- [Gen 3] Hardware-accelerated SHA-1 (#1593)
+- [Gen 3] Newlib 3.0 compatibility (#1599)
+- [Argon / Boron] AT parser immediately interrupted when GSM07.10 multiplexer exits asynchronously (e.g. terminated by the peer or due to keepalive timeout) (#1608)
+- [Gen 3] NAT64 initial base source port randomized on boot (#1609)
+- [Gen 3] LwIP optimizations (#1610)
+- [Gen 3] DHCP hostname option enabled (defaults to DeviceID) (#1595)
+- [Argon] WiFi passwords are not included in the logging output (#1619)
+- [Gen 3] Power failure comparator always configured with 2.8V threshold (#1621)
+- [Gen 3] Default mesh transmit power setting changed from 0dBm to 8dBm (#1629)
+- [Gen 3] BLE MTU and data length changed to default minimum values, while still allowing upgrade by the peer up to the maximums available on nRF52840 (#1634)
+
+### FEATURES
+- [Gen 3] SPI slave mode (#1588)
+- [Gen 3] I2C slave mode (#1591)
+- [Gen 3] Servo HAL (#1589)
+- [Gen 3] Implement a control request to retrieve the module info in the protobuf format (#1614)
+
+### INTERNAL
+
+- [Gen 3] Run unit tests as part of a CI build (#1604).
+
+## 0.8.0-rc.25
+
+### FEATURES
+
+- [Argon] Enables serial setup console `WiFiSetupConsole` in listening mode to manage WiFi credentials (#268)
+
+### BUGFIXES
+
+- [system] Fix memory usage diagnostics (#262)
+- [openthread] Work around network name issues (#267)
+- [ble] Avoid disabling interrupts when processing control requests (#264)
+- [system] Power manager should not immediately go into `NOT_CHARGING` state from `DISCONNECTED` before `DEFAULT_WATCHDOG_TIMEOUT` passes (#263)
+- [system] Battery state of charge should not be reported in `DISCONNECTED` state (#263)
+- [ifapi] DHCPv4 client shouldn't start on ppp interfaces through `if_set_xflags()` (#263)
+- [Boron] ppp (cellular) netif should not be default (#263)
+- [Mesh] Fix memory usage diagnostics in modular builds (#262)
+
+### ENHANCEMENTS
+
+- [hal] Define `retained` and `retained_system` macros (#265)
+- [system] Use ephemeral ports when connecting to the cloud over IPv4 (#269)
+- [system] Re-request permission to become Border Router from the cloud every 5 minutes if previously denied using a separate timer (#266)
+- [openthread] When syncing LwIP -> OT multicast subscriptions, immediately join the group on LwIP side as well, if not joined already (#263)
+
+## 0.8.0-rc.24
+
+### BUGFIXES
+
+- [Mesh] Retry system commands on cloud connection errors (#261)
+
+## 0.8.0-rc.23
+
+### BREAKING CHANGES
+
+- [Mesh] Added versioning to mesh pub/sub protocol. Makes the format incompatible with previous releases (#250)
+
+### FEATURES
+
+- [Boron] PMIC and FuelGauge wiring APIs enabled (#257)
+- [Boron] Enabled system power manager. (LTE) Borons should now work correctly without the battery attached (#257)
+- [Argon, Boron] Ongoing connection attempt can be cancelled from a higher priority context (#258)
+- [Mesh] Require the cloud to confirm the BR functionality
+
+### BUGFIXES
+
+- [Mesh] Ethernet wiring object can now be correctly used (#259)
+- [Mesh] Increased `MEMP_NUM_NETBUF` for all the platforms to allow to queue up more packet buffers
+- [Mesh] Hybrid module reports itself as modular instead of monolithic in system module info (#255)
+- [Mesh] Multicast subscriptions created on LwIP were getting lost when Thread interface was going down (#250)
+- [system] Claim code shouldn't be published if it's not initialized in DCT
+- [Mesh] hal: D7 and RGB LED pins should be in the same PWM group
+
+## 0.8.0-rc.22
+
+### BUGFIXES
+
+- [Argon, Boron] AT parser: Ignore response lines that don't contain an URC when waiting for a command echo
+- [Mesh] Use an unused backup register for the `STARTUP_LISTEN_MODE` flag
+- [Boron] Fixed SARA U201/R410 power on/off and reset procedures.
+- [Mesh] Fixed backup and stack sections overlap in linker files
+- [Boron] Added missing `UBVINT` pin definition
+
+### FEATURES
+
+- [Mesh] `HAL_Pin_Configure()` implemented allowing to configure the pin and set it to a certain state without a glitch
+
+## 0.8.0-rc.21
+
+## BUGFIXES
+
+- [Argon] Shorten describe message so it fits when sent to the cloud [#252]
+- [Boron] Remove NCP module from describe since it is not updatable [#252]
+
+## 0.8.0-rc.20
+
+### FEATURES
+
+- [Mesh] `pinResetFast()` / `pinSetFast()` / `pinReadFast()` implementation (#244)
+- [Mesh] Clear Mesh credentials if Network Joined / Updated request is rejected cloudside with 4xx error code
+- [communication] Added `FORCE_PING` protocol command to proactively ping the cloud
+- [Mesh] Ping the cloud whenever the network interface state / configuration change
+- [Mesh] Send the border router CoAP message to the cloud when the device becomes a border router (#248)
+
+### BUGFIXES
+
+- [Boron] Increased LTE Boron USART polling rate
+- [Boron] Increased maximum PPP LCP echo failures to 10
+- [Boron] Increased maximum GSM07.10 missed keepalives to 5 on LTE Boron
+- [Mesh] NetworkManager: fixes credentials removal and interface state syncup in connected state
+- [Mesh] Removes extra comma from JSON module info in hybrid builds (#246)
+- [Argon, Boron] Fix echo handling in the AT command parser
+- [communication] When resuming a session without sending HELLO message, an error from `ping()` needs to be propagated
+- [Mesh] Added a proposed workaround to radio driver from https://devzone.nordicsemi.com/f/nordic-q-a/38460/thread-dynamic-multiprotocol---assertion-at-radioreceive
+
+### ENHANCEMENTS
+
+- [Argon] Changes expected NCP firmware module function from monolithic (`0x03`) to NCP monolithic (`0x07`), adds NCP module info to system module info (#245)
+- [Mesh] Move system flags to backup RAM (#216)
+- [Mesh] Implement `System.dfu()` and `System.enterSafeMode()` (#209)
+- [Mesh] Implement querying of the last reset info (#209)
+- [Mesh] Ignore ALOC addresses when synchronizing IP address information between OpenThread and LwIP
+- [Mesh] Enable / disable Border Router functionality on system thread instead of LwIP thread
+- [Mesh] `otPlatAssertFail()` implemented
+- [Boron] Reset the modem if it can't register in the network for 5 minutes
+- [Mesh] Use `select()` instead of blocking `recvfrom()` in the DNS64 service
+- [system] Disable interrupts in `ISRTaskQueue::process()` only if there is at least on entry in the queue
+
+
+## 0.8.0-rc.19
+
+### BUGFIXES
+
+- [Mesh] Fixes a bug introduced in rc.18 causing Mesh devices to be stuck in fast blinking green (link-local only communication) despite having a border router within the network.
+- [Mesh] `__errno()` is now exported from system-part1 in rt dynalib
+- [Mesh] Fixes a bug in IPv4 mapped IPv6 address conversion to IPAddress in TCPClient/TCPServer/UDP
+- [Mesh] Correct Mesh backup server address
+- [Mesh] Mesh pubsub thread-safety
+- [Mesh] Use network ID instead of XPAN ID to identify networks
+
+### FEATURES
+
+- [Mesh] Mesh.localIP() introduced
+- [Wiring] UDP: blocking reads
+- [Mesh] Full factory reset
+- [Mesh] Control requests to enable/disable Ethernet shield detection
+
+## 0.8.0-rc.18
+
+### FEATURES
+
+- [Mesh] Wiring API for networking
+
+### BUGFIXES
+
+- [Mesh] Various bugfixes and stability improvements
+
+## 0.8.0-rc.17
+
+### FEATURES
+
+- [Boron] Initial support for 3G and LTE networking
+
+## 0.8.0-rc.16
+
+### FEATURES
+
+- [Argon] Initial support for WiFi networking
+
+## 0.8.0-rc.15
+
+### FEATURES
+
+- [Mesh] Modular firmware support with factory reset
+- [Mesh] I2C Master driver support
+- [Mesh] PWM Driver
+- [Mesh] Tone Driver
+- [Mesh] USB CDC Driver
+- [Mesh] USART DMA Driver
+- [Mesh] RTC Driver
+- [Mesh] FastPin implementation
+- [Mesh] Reset reason
+- [Mesh] UDP in wiring with multicast support
+- [Mesh] Mesh-local publish/subscribe
+- [Mesh] EEPROM emulation
+- [Mesh] Hybrid firmware for mono->modular upgrade w/ tinker app embedded.
+
+### ENHANCEMENTS
+
+- [Mesh] Timeouts for joiner and comissioner
+- [Mesh] Multiple attempts to join network
+- [Mesh] Control requests for managing the cloud connection
+
+### BUGFIXES
+
+- [Mesh] I2C support for sending 0-byte transfer
+- [Mesh] Stop comissioner role synchronously
+- [Mesh] Increase the minimum BLE interval to 30ms
+
+### INTERNAL CHANGES
+
+- Bootloader included in Device OS
+
+## 0.8.0-rc.14
+
+### BUGFIXES
+
+- [Electron/LTE] Fixes unique stale socket issue with LTE devices ([#1666](https://github.com/particle-iot/firmware/pull/1666))
+
+## 0.8.0-rc.12
+
+### ENHANCEMENTS
+
+- [Electron/Photon/P1] Cache persistent feature flags ([#1640](https://github.com/particle-iot/firmware/pull/1640))
+- [Photon/P1] Memory usage optimizations ([#1635](https://github.com/particle-iot/firmware/pull/1635))
+
+### BUGFIXES
+
+- [Electron/Photon/P1] Fixes SOS in 0.8.0-rc.11 and also ensures button and OOM events are handled synchronously. Previously in multi-threaded applications the button handling may have been delayed to run within the application thread.  Now it is always handled immediately and should be noted that it is called from an ISR, so it is not advised to dynamically allocate memory in button event handlers. ([#1600](https://github.com/particle-iot/firmware/pull/1600)) ([#1650](https://github.com/particle-iot/firmware/pull/1650))
+- [Electron/Photon/P1] Do not disable interrupts on every system loop iteration ([#1622](https://github.com/particle-iot/firmware/pull/1622))
+- [Electron/Photon/P1] Wait for Wiring Thread to start ([#1528](https://github.com/particle-iot/firmware/pull/1528))
+- [Electron/LTE] Power Manager Watchdog Timer Fix ([#1581](https://github.com/particle-iot/firmware/pull/1581))
+- [Electron/LTE] AT+CNUM command causing registration failure on LTE devices ([#1627](https://github.com/particle-iot/firmware/pull/1627))
+- [Electron] `PMIC::getInputCurrentLimit()` cannot report values higher than 900mA ([#1581](https://github.com/particle-iot/firmware/pull/1581))
+- [Electron] Do not set the sticky skip hello after handshake ([#1624](https://github.com/particle-iot/firmware/pull/1624))
+- [Photon/P1] Invalidate sockets when turning WiFi off ([#1639](https://github.com/particle-iot/firmware/pull/1639))
+
+## 0.8.0-rc.11
+
+### ENHANCEMENTS
+
+- [Electron/Photon/P1] Do not check and lock bootloader sector write protection on every boot [ch17416] [#1578](https://github.com/particle-iot/firmware/pull/1578)
+
+### BUGFIXES
+
+- [Electron/LTE] adds 1 retry for UDP/TCP socket send in case of error [ch18789] [#1576](https://github.com/particle-iot/firmware/pull/1576)
+- [Electron/Photon/P1] Fixes recursive semaphore lock timeout [ch21928] [#1577](https://github.com/particle-iot/firmware/pull/1577)
+
+## 0.8.0-rc.10
+
+### BUGFIXES
+
+- [Electron/LTE] eDRX & Power Saving mode disabled by default [#1567](https://github.com/particle-iot/firmware/pull/1567)
+
+## 0.8.0-rc.9
+
+### BUGFIXES
+
+- [Electron/LTE] Fast OTA Fixes [#1558](https://github.com/particle-iot/firmware/pull/1558)
+
+## 0.8.0-rc.8
+
+**Note:** This is primarily a MFG. release for SARA-R410 LTE modules. The changes do touch code used on other Electron based platforms, but no other features or fixes are relevant for U260, U270, U201, or G350 modems.  This code has been tested on-device for all mentioned modem types with passing results.  Please let us know if you find any issues.
+
+### BUGFIXES
+
+- [Electron] Disables 30 second ping for Kore SIMs on SARA_R410 (default 23 minute ping re-applied)
+
+## 0.8.0-rc.7
+
+**Note:** This is primarily a MFG. release for SARA-R410 LTE modules. The changes do touch code used on other Electron based platforms, but no other features or fixes are relevant for U260, U270, U201, or G350 modems.  This code has been tested on-device for all mentioned modem types with passing results.  Please let us know if you find any issues.
+
+### BUGFIXES
+
+- [Electron] Bug fixes for SARA-R410 LTE E Series [#1547](https://github.com/particle-iot/firmware/pull/1547)
+
+## 0.8.0-rc.6
+
+**Note:** This is primarily a MFG. release for SARA-R410 LTE modules. The changes do touch code used on other Electron based platforms, but no other features or fixes are relevant for U260, U270, U201, or G350 modems.  This code has been tested on-device for all mentioned modem types with passing results.  Please let us know if you find any issues.
+
+### INTERNAL
+
+- [Electron] Fixes monolithic build [#1543](https://github.com/particle-iot/firmware/pull/1543)
+- [Electron] fixes sticker-rig issue with POWER_ON command [#1544](https://github.com/particle-iot/firmware/pull/1544)
+
+## 0.8.0-rc.5
+
+**Note:** This is primarily a MFG. release for SARA-R410 LTE modules. The changes do touch code used on other Electron based platforms, but no other features or fixes are relevant for U260, U270, U201, or G350 modems.  This code has been tested on-device for all mentioned modem types with passing results.  Please let us know if you find any issues.
+
+### ENHANCEMENTS
+
+- [Electron] Adds support for SARA-R410 to the Cellular HAL [#1532](https://github.com/particle-iot/firmware/pull/1532)
+
+## 0.8.0-rc.4
+
+### ENHANCEMENTS
+
+- [Electron/Photon/P1] Increase Device OS API argument lengths. More data in Functions, Variables, Publish, Subscribe... oh my! [#1537](https://github.com/particle-iot/firmware/pull/1537)
+
+### BUGFIXES
+
+- [Electron] `Particle.keepAlive()` API was broken since v0.6.2-rc.2 firmware on Electron where the System would override an early set User ping interval.  This required a workaround of updating the keepAlive after the System made a connection to the Cloud.  See issue #1482 for workaround. [#1536](https://github.com/particle-iot/firmware/pull/1536)
+- [Electron] Fixes missing URCs for received data during TX or RX socket operations. This caused the modem not to be able to receive further data properly until it re-connected to the Cloud which it would do automatically but usually after a short or longer period of time. [#1530](https://github.com/particle-iot/firmware/pull/1530)
+
 ## 0.8.0-rc.3
 
 ### ENHANCEMENTS

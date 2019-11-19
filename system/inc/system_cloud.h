@@ -21,10 +21,13 @@
 #include "static_assert.h"
 #include "spark_wiring_string.h"
 #include "spark_protocol_functions.h"
+#include "system_tick_hal.h"
 #include "completion_handler.h"
 #include <string.h>
 #include <time.h>
 #include <stdint.h>
+
+#define DEFAULT_CLOUD_EVENT_TTL 60
 
 enum ParticleKeyErrorFlag: uint32_t
 {
@@ -43,6 +46,10 @@ typedef enum
 {
 	CLOUD_VAR_BOOLEAN = 1, CLOUD_VAR_INT = 2, CLOUD_VAR_STRING = 4, CLOUD_VAR_DOUBLE = 9
 } Spark_Data_TypeDef;
+
+namespace particle {
+    static const system_tick_t NOW = static_cast<system_tick_t>(-1);
+}
 
 struct CloudVariableTypeBase {};
 struct CloudVariableTypeBool : public CloudVariableTypeBase {
@@ -105,8 +112,8 @@ class String;
 
 #if defined(PLATFORM_ID)
 
-#if PLATFORM_ID!=3
-STATIC_ASSERT(spark_data_typedef_is_1_byte, sizeof(Spark_Data_TypeDef)==1);
+#if !defined(UNIT_TEST) && PLATFORM_ID !=3 && PLATFORM_ID != 20
+PARTICLE_STATIC_ASSERT(spark_data_typedef_is_1_byte, sizeof(Spark_Data_TypeDef)==1);
 #endif
 
 #endif
@@ -115,8 +122,13 @@ const uint32_t PUBLISH_EVENT_FLAG_PUBLIC = 0x0;
 const uint32_t PUBLISH_EVENT_FLAG_PRIVATE = 0x1;
 const uint32_t PUBLISH_EVENT_FLAG_NO_ACK = 0x2;
 const uint32_t PUBLISH_EVENT_FLAG_WITH_ACK = 0x8;
+/**
+ * This is a stop-gap solution until all synchronous APIs return futures, allowing asynchronous operation.
+ */
+const uint32_t PUBLISH_EVENT_FLAG_ASYNC = EventType::ASYNC;
 
-STATIC_ASSERT(publish_no_ack_flag_matches, PUBLISH_EVENT_FLAG_NO_ACK==EventType::NO_ACK);
+
+PARTICLE_STATIC_ASSERT(publish_no_ack_flag_matches, PUBLISH_EVENT_FLAG_NO_ACK==EventType::NO_ACK);
 
 typedef void (*EventHandler)(const char* name, const char* data);
 
@@ -144,7 +156,7 @@ struct  cloud_function_descriptor {
      }
 };
 
-STATIC_ASSERT(cloud_function_descriptor_size, sizeof(cloud_function_descriptor)==16 || sizeof(void*)!=4);
+PARTICLE_STATIC_ASSERT(cloud_function_descriptor_size, sizeof(cloud_function_descriptor)==16 || sizeof(void*)!=4);
 
 typedef struct spark_variable_t
 {
@@ -152,6 +164,14 @@ typedef struct spark_variable_t
     const void* (*update)(const char* nane, Spark_Data_TypeDef type, const void* var, void* reserved);
 } spark_variable_t;
 
+/**
+ * @brief Register a new variable.
+ * @param varKey	The name of the variable. The length should be between 1 and USER_VAR_KEY_LENGTH bytes.
+ * @param userVar	A pointer to the memory for the variable.
+ * @param userVarType	The type of the variable.
+ * @param extra		Additional registration details.
+ * 		update	A function used to case a variable value to be computed. If defined, this is called when the variable's value is retrieved.
+ */
 bool spark_variable(const char *varKey, const void *userVar, Spark_Data_TypeDef userVarType, spark_variable_t* extra);
 
 /**
@@ -169,6 +189,30 @@ typedef struct {
     void* handler_data;
 } spark_send_event_data;
 
+/**
+ * @brief Publish vitals information
+ *
+ * Provides a mechanism to control the interval at which system
+ * diagnostic messages are sent to the cloud. Subsequently, this
+ * controls the granularity of detail on the fleet health metrics.
+ *
+ * @param[in] period_s The period (in seconds) at which vitals messages
+ *                     are to be sent to the cloud
+ * @arg \p particle::NOW - A special value used to send vitals immediately
+ * @arg \p 0 - Publish a final message and disable periodic publishing
+ * @arg \p n - Publish an initial message and subsequent messages every \p n seconds thereafter
+ * @param[in,out] reserved Reserved for future use.
+ *
+ * @returns \p system_error_t result code
+ * @retval \p system_error_t::SYSTEM_ERROR_NONE
+ * @retval \p system_error_t::SYSTEM_ERROR_IO
+ *
+ * @note At call time, a blocking call is made on the application thread. Any subsequent
+ * timer-based calls are executed asynchronously.
+ *
+ * @note The periodic functionality is not available for the Spark Core.
+ */
+int spark_publish_vitals(system_tick_t period_s, void *reserved);
 bool spark_send_event(const char* name, const char* data, int ttl, uint32_t flags, void* reserved);
 bool spark_subscribe(const char *eventName, EventHandler handler, void* handler_data,
         Spark_Subscription_Scope_TypeDef scope, const char* deviceID, void* reserved);
@@ -198,12 +242,16 @@ bool spark_cloud_flag_auto_connect(void);
 
 ProtocolFacade* system_cloud_protocol_instance(void);
 
-int spark_set_connection_property(unsigned property_id, unsigned data, void* datap, void* reserved);
+int spark_set_connection_property(unsigned property_id, unsigned data, particle::protocol::connection_properties_t* conn_prop, void* reserved);
 
 int spark_set_random_seed_from_cloud_handler(void (*handler)(unsigned int), void* reserved);
 
-extern const unsigned char backup_udp_public_server_key[91];
-extern const unsigned char backup_udp_public_server_address[22];
+extern const unsigned char backup_udp_public_server_key[];
+extern const size_t backup_udp_public_server_key_size;
+
+extern const unsigned char backup_udp_public_server_address[];
+extern const size_t backup_udp_public_server_address_size;
+
 extern const unsigned char backup_tcp_public_server_key[294];
 extern const unsigned char backup_tcp_public_server_address[18];
 
@@ -215,21 +263,28 @@ extern const unsigned char backup_tcp_public_server_address[18];
 #define SPARK_LOOP_DELAY_MILLIS       1000    //1sec
 #define SPARK_RECEIVE_DELAY_MILLIS    10      //10ms
 
-#if PLATFORM_ID==10
-#define TIMING_FLASH_UPDATE_TIMEOUT   90000   //90sec
+#if PLATFORM_ID==10 || HAL_PLATFORM_MESH
+#define TIMING_FLASH_UPDATE_TIMEOUT   (300000) // 300sec
 #else
-#define TIMING_FLASH_UPDATE_TIMEOUT   30000   //30sec
+#define TIMING_FLASH_UPDATE_TIMEOUT   (30000)  // 30sec
 #endif
 
-#define USER_VAR_MAX_COUNT            10
-#define USER_VAR_KEY_LENGTH           12
+#define USER_VAR_MAX_COUNT            (10)  // FIXME: NOT USED
+#define USER_FUNC_MAX_COUNT           (4)   // FIXME: NOT USED
 
-#define USER_FUNC_MAX_COUNT           4
-#define USER_FUNC_KEY_LENGTH          12
-#define USER_FUNC_ARG_LENGTH          64
-
-#define USER_EVENT_NAME_LENGTH        64
-#define USER_EVENT_DATA_LENGTH        64
+#if PLATFORM_ID<2
+    #define USER_FUNC_ARG_LENGTH      (64)  // FIXME: NOT USED
+    #define USER_VAR_KEY_LENGTH       (12)
+    #define USER_FUNC_KEY_LENGTH      (12)
+    #define USER_EVENT_NAME_LENGTH    (64)  // FIXME: NOT USED
+    #define USER_EVENT_DATA_LENGTH    (64)  // FIXME: NOT USED
+#else
+    #define USER_FUNC_ARG_LENGTH      (622) // FIXME: NOT USED
+    #define USER_VAR_KEY_LENGTH       (64)
+    #define USER_FUNC_KEY_LENGTH      (64)
+    #define USER_EVENT_NAME_LENGTH    (64)  // FIXME: NOT USED
+    #define USER_EVENT_DATA_LENGTH    (622) // FIXME: NOT USED
+#endif
 
 #ifdef __cplusplus
 }
