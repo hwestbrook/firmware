@@ -22,10 +22,13 @@
 
 #pragma once
 
+#include <chrono>
+
 #include "spark_wiring_string.h"
 #include "events.h"
 #include "system_cloud.h"
 #include "system_sleep.h"
+#include "system_tick_hal.h"
 #include "spark_protocol_functions.h"
 #include "spark_wiring_system.h"
 #include "spark_wiring_watchdog.h"
@@ -72,10 +75,7 @@ struct is_string_literal {
 };
 
 class CloudClass {
-
-
-public:
-
+  public:
     template <typename T, class ... Types>
     static inline bool variable(const T &name, const Types& ... args)
     {
@@ -96,7 +96,7 @@ public:
         return _variable(varKey, &var, INT);
     }
 
-#if PLATFORM_ID!=3
+#if PLATFORM_ID!=3 && PLATFORM_ID!=20
     // compiling with gcc this function duplicates the previous one.
     static inline bool _variable(const char* varKey, const int32_t& var)
     {
@@ -229,7 +229,7 @@ public:
 
     inline particle::Future<bool> publish(const char *eventName, const char *eventData, PublishFlags flags1, PublishFlags flags2 = PublishFlags())
     {
-        return publish(eventName, eventData, 60, flags1, flags2);
+        return publish(eventName, eventData, DEFAULT_CLOUD_EVENT_TTL, flags1, flags2);
     }
 
     inline particle::Future<bool> publish(const char *eventName, const char *eventData, int ttl, PublishFlags flags1, PublishFlags flags2 = PublishFlags())
@@ -241,6 +241,31 @@ public:
     particle::Future<bool> publish(const char* name) PARTICLE_DEPRECATED_API_DEFAULT_PUBLISH_SCOPE;
     particle::Future<bool> publish(const char* name, const char* data) PARTICLE_DEPRECATED_API_DEFAULT_PUBLISH_SCOPE;
     particle::Future<bool> publish(const char* name, const char* data, int ttl) PARTICLE_DEPRECATED_API_DEFAULT_PUBLISH_SCOPE;
+
+    /**
+     * @brief Publish vitals information
+     *
+     * Provides a mechanism to control the interval at which system
+     * diagnostic messages are sent to the cloud. Subsequently, this
+     * controls the granularity of detail on the fleet health metrics.
+     *
+     * @param[in] period_s The period (in seconds) at which vitals messages are to be sent
+     *                     to the cloud (default value: \p particle::NOW)
+     * @arg \p particle::NOW - A special value used to send vitals immediately
+     * @arg \p 0 - Publish a final message and disable periodic publishing
+     * @arg \p s - Publish an initial message and subsequent messages every \p s seconds thereafter
+     *
+     * @returns \p system_error_t result code
+     * @retval \p system_error_t::SYSTEM_ERROR_NONE
+     * @retval \p system_error_t::SYSTEM_ERROR_IO
+     *
+     * @note At call time, a blocking call is made on the application thread. Any subsequent
+     * timer-based calls are executed asynchronously.
+     *
+     * @note The periodic functionality is not available for the Spark Core.
+     */
+    int publishVitals(system_tick_t period_s = particle::NOW);
+    inline int publishVitals(std::chrono::seconds s) { return publishVitals(s.count()); }
 
     inline bool subscribe(const char *eventName, EventHandler handler, Spark_Subscription_Scope_TypeDef scope)
     {
@@ -289,6 +314,9 @@ public:
 
     bool syncTime(void)
     {
+        if (!connected()) {
+            return false;
+        }
         return CLOUD_FN(spark_sync_time(NULL), false);
     }
 
@@ -334,12 +362,17 @@ public:
     static String deviceID(void) { return SystemClass::deviceID(); }
 
 #if HAL_PLATFORM_CLOUD_UDP
-    static void keepAlive(unsigned sec)
+    inline static void keepAlive(unsigned sec)
     {
+        particle::protocol::connection_properties_t conn_prop = {0};
+        conn_prop.size = sizeof(conn_prop);
+        conn_prop.keepalive_source = particle::protocol::KeepAliveSource::USER;
         CLOUD_FN(spark_set_connection_property(particle::protocol::Connection::PING,
-                                               sec * 1000, nullptr, nullptr),
+                                               sec * 1000, &conn_prop, nullptr),
                  (void)0);
     }
+
+    inline static void keepAlive(std::chrono::seconds s) { keepAlive(s.count()); }
 #endif
 
 private:
@@ -380,7 +413,6 @@ private:
         return s->c_str();
     }
 };
-
 
 extern CloudClass Spark __attribute__((deprecated("Spark is now Particle.")));
 extern CloudClass Particle;

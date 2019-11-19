@@ -28,6 +28,8 @@ TARGETDIR=obj/
 TARGET=runner
 
 include $(SRC_ROOT)/build/version.mk
+include $(SRC_ROOT)/build/lang-std.mk
+CCFLAGS += $(CONLYFLAGS)
 
 BUILD_PATH=$(TARGETDIR)core-firmware/
 # Define the target directories. Nest 2 levels deep since we also include
@@ -57,6 +59,7 @@ CPPSRC += $(call target_files,$(WIRING_SRC),spark_wiring_diagnostics.cpp)
 CPPSRC += $(call target_files,$(WIRING_SRC),spark_wiring_cellular_printable.cpp)
 CPPSRC += $(call target_files,$(WIRING_SRC),spark_wiring_i2c.cpp)
 CPPSRC += $(call target_files,$(WIRING_SRC),spark_wiring_wifi.cpp)
+CPPSRC += $(call target_files,$(WIRING_SRC),spark_wiring_network.cpp)
 CPPSRC += $(call target_files,$(WIRING_SRC),string_convert.cpp)
 CPPSRC += $(call target_files,$(WIRING_SRC),string_convert.cpp)
 CPPSRC += $(call target_files,$(WIRING_GLOBALS_SRC),wiring_globals_i2c.cpp)
@@ -66,6 +69,7 @@ CPPSRC += $(call target_files,$(SYSTEM)src/,system_string_interpolate.cpp)
 CPPSRC += $(call target_files,$(SYSTEM)src/,system_led_signal.cpp)
 CPPSRC += $(call target_files,$(SYSTEM)src/,active_object.cpp)
 CPPSRC += $(call target_files,$(SYSTEM)src/,usb_control_request_channel.cpp)
+CPPSRC += $(call target_files,$(SYSTEM)src/,control_request_handler.cpp)
 CPPSRC += $(call target_files,$(HAL)src/gcc,filesystem.cpp)
 CPPSRC += $(call target_files,$(HAL)src/gcc,device_config.cpp)
 CPPSRC += $(call target_files,$(HAL)src/gcc,core_hal.cpp)
@@ -107,7 +111,7 @@ INCLUDE_DIRS += $(HAL)shared
 INCLUDE_DIRS += $(HAL)inc
 INCLUDE_DIRS += $(HAL)src/electron
 INCLUDE_DIRS += $(HAL)src/gcc
-INCLUDE_DIRS += $(COMMUNICATION)src
+INCLUDE_DIRS += $(COMMUNICATION)inc
 INCLUDE_DIRS += dynalib/inc
 INCLUDE_DIRS += $(PLATFORM)shared/inc
 INCLUDE_DIRS += $(PLATFORM)MCU/gcc/inc
@@ -142,7 +146,6 @@ CFLAGS += -DSPARK=1 -DPLATFORM_ID=3
 CFLAGS += -DDEBUG_BUILD
 CFLAGS += $(DEFINES:%=-D%)
 
-CPPFLAGS += -std=gnu++11
 CPPFLAGS += -DCATCH_CONFIG_SFINAE
 
 LDFLAGS += $(LIB_DIRS:%=-L%) $(LIBS:%=-l%)

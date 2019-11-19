@@ -26,6 +26,14 @@ namespace particle { namespace protocol {
 
 uint16_t CoAPMessage::message_count = 0;
 
+bool is_ack_or_reset(const uint8_t* buf, size_t len)
+{
+	if (len<1)
+		return false;
+	CoAPType::Enum type = CoAP::type(buf);
+	return type==CoAPType::ACK || type==CoAPType::RESET;
+}
+
 ProtocolError CoAPMessageStore::send_message(CoAPMessage* msg, Channel& channel)
 {
 	Message m((uint8_t*)msg->get_data(), msg->get_data_length(), msg->get_data_length());
@@ -120,6 +128,9 @@ ProtocolError CoAPMessageStore::receive(Message& msg, Channel& channel, system_t
 			if (msg) {
 				msg->notify_delivered_nak();
 			}
+			// a RESET indicates that the session is invalid.
+			// Currently the device never sends a RESET, but if it were to do that
+			// then we should track which direction we are sending
 			channel.command(Channel::DISCARD_SESSION, nullptr);
 		}
 		DEBUG("recieved ACK for message id=%x", id);
@@ -157,6 +168,7 @@ ProtocolError CoAPMessageStore::receive(Message& msg, Channel& channel, system_t
 
 bool CoAPMessageStore::has_unacknowledged_requests() const
 {
+	// TODO: Use a message counter
 	for (const CoAPMessage* msg = head; msg != nullptr; msg = msg->get_next()) {
 		if (is_confirmable((uint8_t*)msg->get_data()))
 			return true;

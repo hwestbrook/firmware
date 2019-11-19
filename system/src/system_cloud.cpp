@@ -25,9 +25,15 @@
  ******************************************************************************
  */
 
+#include <cstdarg>
+
+#include "logging.h"
+#include "protocol_defs.h"
 #include "spark_wiring_string.h"
+#include "spark_wiring_timer.h"
 #include "system_cloud.h"
 #include "system_cloud_internal.h"
+#include "system_publish_vitals.h"
 #include "system_task.h"
 #include "system_threading.h"
 #include "system_update.h"
@@ -38,7 +44,24 @@
 #include "deviceid_hal.h"
 #include "system_mode.h"
 
+#if PLATFORM_THREADING
+#include "spark_wiring_timer.h"
+#endif // PLATFORM_THREADING
+
 extern void (*random_seed_from_cloud_handler)(unsigned int);
+
+namespace
+{
+
+using namespace particle::system;
+
+#if PLATFORM_THREADING
+VitalsPublisher<Timer> _vitals;
+#else  // not PLATFORM_THREADING
+VitalsPublisher<particle::NullTimer> _vitals;
+#endif // PLATFORM_THREADING
+
+} // namespace
 
 #ifndef SPARK_NO_CLOUD
 
@@ -55,6 +78,29 @@ bool register_event(const char* eventName, SubscriptionScope::Enum event_scope, 
     else
         success = spark_protocol_send_subscription_scope(sp, eventName, event_scope);
     return success;
+}
+
+int spark_publish_vitals(system_tick_t period_s_, void* reserved_)
+{
+    SYSTEM_THREAD_CONTEXT_SYNC(spark_publish_vitals(period_s_, reserved_));
+    int result;
+
+    switch (period_s_)
+    {
+    case particle::NOW:
+        result = _vitals.publish();
+        break;
+    case 0:
+        _vitals.disablePeriodicPublish();
+        result = _vitals.publish();
+        break;
+    default:
+        _vitals.period(period_s_);
+        _vitals.enablePeriodicPublish();
+        result = _vitals.publish();
+    }
+
+    return result;
 }
 
 bool spark_subscribe(const char *eventName, EventHandler handler, void* handler_data,
@@ -113,7 +159,12 @@ inline uint32_t convert(uint32_t flags) {
 
 bool spark_send_event(const char* name, const char* data, int ttl, uint32_t flags, void* reserved)
 {
+    if (flags & PUBLISH_EVENT_FLAG_ASYNC) {
+        SYSTEM_THREAD_CONTEXT_ASYNC_RESULT(spark_send_event(name, data, ttl, flags, reserved), true);
+    }
+    else {
     SYSTEM_THREAD_CONTEXT_SYNC(spark_send_event(name, data, ttl, flags, reserved));
+    }
 
     spark_protocol_send_event_data d = { sizeof(spark_protocol_send_event_data) };
     if (reserved) {
@@ -133,16 +184,7 @@ bool spark_variable(const char *varKey, const void *userVar, Spark_Data_TypeDef 
     User_Var_Lookup_Table_t* item = NULL;
     if (NULL != userVar && NULL != varKey && strlen(varKey)<=USER_VAR_KEY_LENGTH)
     {
-        if ((item=find_var_by_key_or_add(varKey))!=NULL)
-        {
-            item->userVar = userVar;
-            item->userVarType = userVarType;
-            if (extra) {
-                item->update = extra->update;
-            }
-            memset(item->userVarKey, 0, USER_VAR_KEY_LENGTH);
-            memcpy(item->userVarKey, varKey, USER_VAR_KEY_LENGTH);
-        }
+    	item=find_var_by_key_or_add(varKey, userVar, userVarType, extra);
     }
     return item!=NULL;
 }
@@ -157,7 +199,8 @@ bool spark_function(const char *funcKey, p_user_function_int_str_t pFunc, void* 
 
     bool result;
     if (funcKey) {                          // old call, with funcKey != NULL
-        cloud_function_descriptor desc;
+        cloud_function_descriptor desc = {};
+        desc.size = sizeof(desc);
         desc.funcKey = funcKey;
         desc.fn = call_raw_user_function;
         desc.data = (void*)pFunc;
@@ -169,7 +212,7 @@ bool spark_function(const char *funcKey, p_user_function_int_str_t pFunc, void* 
     return result;
 }
 
-#endif
+#endif // SPARK_NO_CLOUD
 
 bool spark_cloud_flag_connected(void)
 {
@@ -188,7 +231,7 @@ void spark_process(void)
         ApplicationThread.process();
         return;
     }
-#endif
+#endif // PLATFORM_THREADING
 
     // run the background processing loop, and specifically also pump cloud events
     Spark_Idle_Events(true);
@@ -202,10 +245,10 @@ String spark_deviceID(void)
     return bytes2hex(id, len);
 }
 
-int spark_set_connection_property(unsigned property_id, unsigned data, void* datap, void* reserved)
+int spark_set_connection_property(unsigned property_id, unsigned data, particle::protocol::connection_properties_t* conn_prop, void* reserved)
 {
-    SYSTEM_THREAD_CONTEXT_SYNC(spark_set_connection_property(property_id, data, datap, reserved));
-    return spark_protocol_set_connection_property(sp, property_id, data, datap, reserved);
+    SYSTEM_THREAD_CONTEXT_SYNC(spark_set_connection_property(property_id, data, conn_prop, reserved));
+    return spark_protocol_set_connection_property(sp, property_id, data, conn_prop, reserved);
 }
 
 int spark_set_random_seed_from_cloud_handler(void (*handler)(unsigned int), void* reserved)

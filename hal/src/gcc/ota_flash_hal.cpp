@@ -58,7 +58,10 @@ int HAL_FLASH_OTA_Validate(hal_module_t* mod, bool userDepsOptional, module_vali
      return HAL_UPDATE_APPLIED;
 }
 
-
+hal_update_complete_t HAL_FLASH_ApplyPendingUpdate(hal_module_t* module, bool dryRun, void* reserved)
+{
+    return HAL_UPDATE_ERROR;
+}
 
 /**
  * Set the claim code for this device.
@@ -189,3 +192,6 @@ extern "C" void random_seed_from_cloud(unsigned int value)
 {
 }
 
+void HAL_OTA_Add_System_Info(hal_system_info_t* info, bool create, void* reserved)
+{
+}

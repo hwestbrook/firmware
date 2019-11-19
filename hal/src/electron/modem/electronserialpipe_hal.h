@@ -42,7 +42,9 @@ public:
 
     /** Initialization member function
     */
-    void begin(unsigned int);
+    void begin(unsigned baud, bool hwFlowCtrl);
+
+    void end();
 
     // tx channel
     //----------------------------------------------------
@@ -104,13 +106,30 @@ public:
     */
     void rxPause();
 
+    /** returns size of TX pipe
+    */
+    int txSize();
+
+    /** returns size of RX pipe
+    */
+    int rxSize();
+
+    /** returns size of TX pipe
+    */
+    void txDump();
+
+    /** returns size of RX pipe
+    */
+    void rxDump();
+
 protected:
     //! start transmission helper
     void txStart(void);
     //! move bytes to hardware
     void txCopy(void);
+
     Pipe<char> _pipeRx; //!< receive pipe
     Pipe<char> _pipeTx; //!< transmit pipe
-
-    bool pause_;
+    int baud_;
+    bool pause_, hwFlowCtrl_;
 };

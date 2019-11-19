@@ -60,6 +60,8 @@ extern volatile uint8_t SPARK_WLAN_SLEEP;
 extern volatile uint8_t SPARK_WLAN_STARTED;
 extern volatile uint8_t SPARK_CLOUD_SOCKETED;
 extern volatile uint8_t SPARK_CLOUD_CONNECTED;
+extern volatile uint8_t SPARK_CLOUD_HANDSHAKE_PENDING;
+extern volatile uint8_t SPARK_CLOUD_HANDSHAKE_NOTIFY_DONE;
 extern volatile uint8_t SPARK_FLASH_UPDATE;
 
 extern volatile uint8_t Spark_Error_Count;
@@ -104,6 +106,11 @@ void* system_pool_alloc(size_t size, void* reserved);
  * Frees the memory allocated with system_pool_alloc(). This function can be called from an ISR.
  */
 void system_pool_free(void* ptr, void* reserved);
+
+int system_invoke_event_handler(uint16_t handlerInfoSize, FilteringEventHandler* handlerInfo,
+                const char* event_name, const char* event_data, void* reserved);
+
+typedef int (*system_task_fn)();
 
 #ifdef __cplusplus
 }

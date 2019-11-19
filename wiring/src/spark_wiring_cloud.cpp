@@ -1,5 +1,8 @@
 #include "spark_wiring_cloud.h"
 
+#include <functional>
+#include "system_cloud.h"
+
 namespace {
 
 using namespace particle;
@@ -14,6 +17,7 @@ void publishCompletionCallback(int error, const void* data, void* callbackData, 
     }
 }
 #endif
+
 } // namespace
 
 int CloudClass::call_raw_user_function(void* data, const char* param, void* reserved)
@@ -37,8 +41,7 @@ void CloudClass::call_wiring_event_handler(const void* handler_data, const char 
 
 bool CloudClass::register_function(cloud_function_t fn, void* data, const char* funcKey)
 {
-    cloud_function_descriptor desc;
-    memset(&desc, 0, sizeof(desc));
+    cloud_function_descriptor desc = {};
     desc.size = sizeof(desc);
     desc.fn = fn;
     desc.data = (void*)data;
@@ -48,6 +51,9 @@ bool CloudClass::register_function(cloud_function_t fn, void* data, const char* 
 
 Future<bool> CloudClass::publish_event(const char *eventName, const char *eventData, int ttl, PublishFlags flags) {
 #ifndef SPARK_NO_CLOUD
+    if (!connected()) {
+        return Future<bool>(Error::INVALID_STATE);
+    }
     spark_send_event_data d = { sizeof(spark_send_event_data) };
 
     // Completion handler
@@ -65,4 +71,8 @@ Future<bool> CloudClass::publish_event(const char *eventName, const char *eventD
 #else
     return Future<bool>(Error::NOT_SUPPORTED);
 #endif
+}
+
+int CloudClass::publishVitals(system_tick_t period_s_) {
+    return spark_publish_vitals(period_s_, nullptr);
 }

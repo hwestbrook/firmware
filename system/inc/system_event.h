@@ -50,9 +50,10 @@ enum SystemEvents {
     cloud_status = 1<<6,             // parameter is 0 for disconnected, 1 for connecting, 8 for connected, 9 for disconnecting. other values reserved.
     button_status = 1<<7,            // parameter is >0 for time pressed in ms (when released) or 0 for just pressed.
     firmware_update = 1<<8,          // parameter is 0 for begin, 1 for OTA complete, -1 for error.
-    firmware_update_pending = 1<<9,
+    firmware_update_pending = 1<<9,	// notifies the application that an OTA update is pending and will be delivered when updates are enabled
     reset_pending = 1<<10,          // notifies that the system would like to shutdown (System.resetPending() return true)
-    reset = 1<<11,                  // notifies that the system will now reset on return from this event.
+    // todo - rename to system_reset, or otherwise avoid common name clashes
+	reset = 1<<11,                  // notifies that the system will now reset on return from this event.
     button_click = 1<<12,           // generated for every click in series - data is number of clicks in the lower 4 bits.
     button_final_click = 1<<13,     // generated for last click in series - data is the number of clicks in the lower 4 bits.
     time_changed = 1<<14,
@@ -97,6 +98,12 @@ enum SystemEventsParam {
     time_changed_sync = 1
 };
 
+/**
+ * Flags altering the behavior of the `system_notify_event()` function.
+ */
+enum SystemNotifyEventFlag {
+    NOTIFY_SYNCHRONOUSLY = 0x01
+};
 
 /**
  * Subscribes to the system events given
@@ -122,9 +129,11 @@ void system_notify_time_changed(uint32_t data, void* reserved, void* reserved1);
 
 
 /**
- * Notifies all subscribers about an event.
+ * Notifies all subscribers about an event. It is safe to call this function from an ISR.
  * @param event
  * @param data
  * @param pointer
+ * @param flags Event flags as defined by the `SystemNotifyEventFlag` enum.
  */
-void system_notify_event(system_event_t event, uint32_t data=0, void* pointer=nullptr, void (*fn)(void* data)=nullptr, void* fndata=nullptr);
+void system_notify_event(system_event_t event, uint32_t data = 0, void* pointer = nullptr,
+        void (*fn)(void* data) = nullptr, void* fndata = nullptr, unsigned flags = 0);

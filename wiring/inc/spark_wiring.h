@@ -25,6 +25,8 @@
 
 #ifndef SPARK_WIRING_H
 #define SPARK_WIRING_H
+/* Important that interrupts_hal.h is included first */
+#include "interrupts_hal.h"
 #include "pinmap_hal.h"
 #include "gpio_hal.h"
 #include "adc_hal.h"
@@ -41,12 +43,15 @@
 #include "spark_wiring_cellular_printable.h"
 #include "spark_wiring_wifi.h"
 #include "spark_wiring_cellular.h"
+#include "spark_wiring_mesh.h"
+#include "spark_wiring_ethernet.h"
 #include "spark_wiring_character.h"
 #include "spark_wiring_random.h"
 #include "spark_wiring_system.h"
 #include "spark_wiring_cloud.h"
 #include "spark_wiring_rgb.h"
 #include "spark_wiring_ticks.h"
+#include "spark_wiring_nfc.h"
 
 /* To prevent build error, we are undefining and redefining DAC here */
 #undef DAC

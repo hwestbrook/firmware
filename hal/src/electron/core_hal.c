@@ -30,6 +30,7 @@
 #include "task.h"
 #include "semphr.h"
 #include "dct_hal.h"
+#include "service_debug.h"
 
 /* Private typedef ----------------------------------------------------------*/
 
@@ -187,7 +188,8 @@ void HAL_Core_Restore_Interrupt(IRQn_Type irqn) {
 
 
 static TaskHandle_t  app_thread_handle;
-#define APPLICATION_STACK_SIZE 6144
+#define APPLICATION_STACK_SIZE (6144)
+#define MALLOC_LOCK_TIMEOUT_MS (60000) // This is defined in "ticks" and each tick is 1ms
 
 /**
  * The mutex to ensure only one thread manipulates the heap at a given time.
@@ -199,16 +201,21 @@ static void init_malloc_mutex(void)
     malloc_mutex = xSemaphoreCreateRecursiveMutex();
 }
 
-void __malloc_lock(void* ptr)
+void __malloc_lock(struct _reent *ptr)
 {
-    if (malloc_mutex)
-        while (!xSemaphoreTakeRecursive(malloc_mutex, 0xFFFFFFFF)) {}
+    if (malloc_mutex) {
+        if (!xSemaphoreTakeRecursive(malloc_mutex, MALLOC_LOCK_TIMEOUT_MS)) {
+            PANIC(HeapError, "Semaphore Lock Timeout");
+            while (1);
+        }
+    }
 }
 
-void __malloc_unlock(void* ptr)
+void __malloc_unlock(struct _reent *ptr)
 {
-    if (malloc_mutex)
+    if (malloc_mutex) {
         xSemaphoreGiveRecursive(malloc_mutex);
+    }
 }
 
 void application_task_start(void* arg)

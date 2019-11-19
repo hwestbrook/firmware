@@ -1,3 +1,20 @@
+/*
+ * Copyright (c) 2018 Particle Industries, Inc.  All rights reserved.
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation, either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, see <http://www.gnu.org/licenses/>.
+ */
+
 #include "logging.h"
 LOG_SOURCE_CATEGORY("sys.power")
 
@@ -9,8 +26,16 @@ LOG_SOURCE_CATEGORY("sys.power")
 #include "debug.h"
 #include "spark_wiring_platform.h"
 #include "pinmap_hal.h"
+// For system flags
+#include "system_update.h"
 
-#if Wiring_Cellular == 1
+#if (HAL_PLATFORM_PMIC_BQ24195 && HAL_PLATFORM_FUELGAUGE_MAX17043)
+
+namespace {
+
+const uint8_t BQ24195_VERSION = 0x23;
+
+} // anonymous
 
 using namespace particle::power;
 
@@ -31,9 +56,13 @@ void PowerManager::init() {
 #if defined(DEBUG_BUILD)
     4 * 1024);
 #else
-    512);
+    1024);
 #endif // defined(DEBUIG_BUILD)
   SPARK_ASSERT(thread_ != nullptr);
+
+#if HAL_INCREASE_CHARGING_CURRENT_WHEN_POWERED_BY_VIN
+  HAL_USB_Set_State_Change_Callback(usbStateChangeHandler, (void*)this, nullptr);
+#endif
 }
 
 void PowerManager::update() {
@@ -109,16 +138,40 @@ void PowerManager::handleUpdate() {
     }
   }
 
+  if (g_batteryState == BATTERY_STATE_DISCONNECTED && state == BATTERY_STATE_NOT_CHARGING &&
+      chargingDisabledTimestamp_) {
+    // We are aware of the fact that charging has been disabled, stay in disconnected state
+    state = BATTERY_STATE_DISCONNECTED;
+  }
+
   const bool lowBat = fuel.getAlert();
   handleStateChange(g_batteryState, state, lowBat);
 
   power_source_t src = g_powerSource;
   if (pwr_good) {
     uint8_t vbus_stat = status >> 6;
+    // LOG_DEBUG(INFO, "vbus_stat: 0x%x, usb state: %d, current limit: %d", vbus_stat, HAL_USB_Get_State(), power.getInputCurrentLimit());
     switch (vbus_stat) {
-      case 0x01:
+      case 0x01: {
+#if HAL_INCREASE_CHARGING_CURRENT_WHEN_POWERED_BY_VIN
+        // Workaround: 
+        // when Gen3 device is powered by VIN, USB peripheral gets no power supply.
+        // In this case BQ24195 will wrongly assume the device is connected to a USB host.
+        // This workaround is to manually increase charging current limit from 500mA to 900mA
+        // and decrease input voltage limit to 3880mV.
+        // More details are in clubhouse [CH34730]
+        auto usb_state = HAL_USB_Get_State();
+        if (usb_state <= HAL_USB_STATE_DETACHED) {
+          if (power.getInputCurrentLimit() != DEFAULT_INPUT_CURRENT_LIMIT) {
+            power.setInputCurrentLimit(DEFAULT_INPUT_CURRENT_LIMIT);
+            power.setInputVoltageLimit(3880);
+            // LOG_DEBUG(INFO, "DPDM Done-1! +++ current limit: %d", power.getInputCurrentLimit());
+          }
+        }
+#endif
         src = POWER_SOURCE_USB_HOST;
         break;
+      }
       case 0x02:
         src = POWER_SOURCE_USB_ADAPTER;
         break;
@@ -134,6 +187,10 @@ void PowerManager::handleUpdate() {
           // so just check input current source register whenever we are in this state
           if (power.getInputCurrentLimit() != DEFAULT_INPUT_CURRENT_LIMIT) {
             power.setInputCurrentLimit(DEFAULT_INPUT_CURRENT_LIMIT);
+#if HAL_INCREASE_CHARGING_CURRENT_WHEN_POWERED_BY_VIN
+            power.setInputVoltageLimit(3880);
+#endif
+            // LOG_DEBUG(INFO, "DPDM Done-2! +++ current limit: %d", power.getInputCurrentLimit());
           }
         }
         break;
@@ -166,6 +223,13 @@ void PowerManager::loop(void* arg) {
   PowerManager* self = PowerManager::instance();
   {
     LOG_DEBUG(INFO, "Power Management Initializing.");
+#if HAL_PLATFORM_POWER_MANAGEMENT_OPTIONAL
+    if (!self->detect()) {
+      goto exit;
+    }
+#endif // HAL_PLATFORM_POWER_MANAGEMENT_OPTIONAL
+    // IMPORTANT: attach the interrupt handler first
+    attachInterrupt(LOW_BAT_UC, &PowerManager::isrHandler, FALLING);
     self->initDefault();
     FuelGauge fuel(true);
     fuel.wakeup();
@@ -173,7 +237,6 @@ void PowerManager::loop(void* arg) {
     fuel.clearAlert(); // Ensure this is cleared, or interrupts will never occur
     LOG_DEBUG(INFO, "State of Charge: %-6.2f%%", fuel.getSoC());
     LOG_DEBUG(INFO, "Battery Voltage: %-4.2fV", fuel.getVCell());
-    attachInterrupt(LOW_BAT_UC, &PowerManager::isrHandler, FALLING);
   }
 
   uint32_t tmp;
@@ -183,7 +246,14 @@ void PowerManager::loop(void* arg) {
       self->handleUpdate();
     }
     self->handlePossibleFaultLoop();
+    self->checkWatchdog();
   }
+
+#if HAL_PLATFORM_POWER_MANAGEMENT_OPTIONAL
+exit:
+#endif // HAL_PLATFORM_POWER_MANAGEMENT_OPTIONAL
+  self->deinit();
+  os_thread_exit(nullptr);
 }
 
 void PowerManager::isrHandler() {
@@ -191,7 +261,7 @@ void PowerManager::isrHandler() {
   self->update();
 }
 
-void PowerManager::initDefault() {
+void PowerManager::initDefault(bool dpdm) {
   PMIC power(true);
   power.begin();
   // Enters host-managed mode
@@ -202,9 +272,11 @@ void PowerManager::initDefault() {
 
   // Set recharge threshold to default value - 100mV
   power.setRechargeThreshold(100);
-  // power.setChargeCurrent(0,0,0,0,0,0); // 512mA
-  // Force-start input current limit detection
-  power.enableDPDM();
+  power.setChargeCurrent(0,0,0,1,1,0); // 512mA + 256mA + 128mA = 896mA
+  if (dpdm) {
+    // Force-start input current limit detection
+    power.enableDPDM();
+  }
   // Enable charging
   power.enableCharging();
 
@@ -283,7 +355,8 @@ void PowerManager::handleStateChange(battery_state_t from, battery_state_t to, b
       // Disable charging
       power.disableCharging();
       // Enable watchdog that should re-enable charging in 40 seconds
-      power.setWatchdog(0b01);
+      // power.setWatchdog(0b01);
+      chargingDisabledTimestamp_ = millis();
       break;
     }
   }
@@ -346,6 +419,17 @@ void PowerManager::handlePossibleFaultLoop() {
   }
 }
 
+void PowerManager::checkWatchdog() {
+  if (g_batteryState == BATTERY_STATE_DISCONNECTED &&
+      ((millis() - chargingDisabledTimestamp_) >= DEFAULT_WATCHDOG_TIMEOUT)) {
+    // Re-enable charging, do not run DPDM detection
+    LOG_DEBUG(TRACE, "re-enabling charging");
+    chargingDisabledTimestamp_ = 0;
+    g_batteryState = BATTERY_STATE_UNKNOWN;
+    initDefault(false);
+  }
+}
+
 void PowerManager::logStat(uint8_t stat, uint8_t fault) {
 #if defined(DEBUG_BUILD) && 0
   uint8_t vbus_stat = stat >> 6; // 0 – Unknown (no input, or DPDM detection incomplete), 1 – USB host, 2 – Adapter port, 3 – OTG
@@ -364,4 +448,64 @@ void PowerManager::logStat(uint8_t stat, uint8_t fault) {
 #endif
 }
 
-#endif /* Wiring_Cellular == 1 */
+#if HAL_PLATFORM_POWER_MANAGEMENT_OPTIONAL
+bool PowerManager::detect() {
+  // Check if runtime detection enabled (DCT flag)
+  uint8_t v;
+  system_get_flag(SYSTEM_FLAG_PM_DETECTION, &v, nullptr);
+  if (!v) {
+    LOG_DEBUG(INFO, "Runtime PMIC/FuelGauge detection is not enabled");
+    return false;
+  }
+
+  // Check that PMIC is present by reading its version
+  PMIC power(true);
+  power.begin();
+  auto pVer = power.getVersion();
+  if (pVer != BQ24195_VERSION) {
+    LOG(WARN, "PMIC not present");
+    return false;
+  }
+  LOG_DEBUG(INFO, "PMIC present, version %02x", (int)pVer);
+
+  // Check that FuelGauge is present by reading its version
+  FuelGauge fuel(true);
+  fuel.wakeup();
+  auto fVer = fuel.getVersion();
+  if (fVer == 0x0000 || fVer == 0xffff) {
+    LOG(WARN, "FuelGauge not present");
+    return false;
+  }
+  fuel.clearAlert();
+  LOG_DEBUG(INFO, "FuelGauge present, version %04x", (int)fVer);
+
+  // FIXME: there is no reliable way to check whether PMIC interrupt line
+  // is connected to LOW_BAT_UC
+
+  detect_ = true;
+
+  return true;
+}
+#endif // HAL_PLATFORM_POWER_MANAGEMENT_OPTIONAL
+
+void PowerManager::deinit() {
+  LOG(WARN, "Disabling system power manager");
+#if HAL_PLATFORM_POWER_MANAGEMENT_OPTIONAL
+  if (detect_) {
+#else
+  {
+#endif // #if HAL_PLATFORM_POWER_MANAGEMENT_OPTIONAL
+    // PMIC is most likely present, return it to automatic mode
+    PMIC power(true);
+    power.setWatchdog(0b01);
+  }
+
+  detachInterrupt(LOW_BAT_UC);
+}
+
+void PowerManager::usbStateChangeHandler(HAL_USB_State state, void* context) {
+  PowerManager* power = (PowerManager*)context;
+  power->update();
+}
+
+#endif /* (HAL_PLATFORM_PMIC_BQ24195 && HAL_PLATFORM_FUELGAUGE_MAX17043) */

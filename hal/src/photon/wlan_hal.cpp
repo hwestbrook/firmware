@@ -55,6 +55,7 @@
 #ifdef LWIP_DHCP
 #include "lwip/dhcp.h"
 #endif // LWIP_DHCP
+#include "tls_cipher_suites.h"
 
 uint64_t tls_host_get_time_ms_local() {
     uint64_t time_ms;
@@ -813,11 +814,20 @@ wlan_result_t wlan_activate()
         wiced_network_register_link_callback(HAL_NET_notify_connected, HAL_NET_notify_disconnected,
                                              WICED_STA_INTERFACE);
     wlan_refresh_antenna();
+
+    // XXX: By default WICED sets maximum TLS version to 1.2, however testing WPA Enterprise authentication
+    // in various environemnts showed that its implementation is flawed at least in WICED 3.7.0-7.
+    // Limiting the maximum TLS version to 1.1 seems to resolve the issues for a number of the environemnts
+    // where the authentication was previously failing with TLS 1.2.
+    extern tls_version_num_t tls_maximum_version;
+    tls_maximum_version = TLS1_1;
+
     return result;
 }
 
 wlan_result_t wlan_deactivate()
 {
+    socket_close_all();
     wlan_disconnect_now();
 
     wiced_result_t result = wiced_wlan_connectivity_deinit();
@@ -826,7 +836,6 @@ wlan_result_t wlan_deactivate()
 
 wlan_result_t wlan_disconnect_now()
 {
-    /* socket_close_all(); */
     wlan_connect_cancel(false);
     wiced_result_t result = wiced_network_down(WICED_STA_INTERFACE);
     HAL_NET_notify_disconnected();
@@ -1316,7 +1325,7 @@ inline void setAddress(wiced_ip_address_t* addr, HAL_IPAddress& target)
     HAL_IPV4_SET(&target, GET_IPV4_ADDRESS(*addr));
 }
 
-void wlan_fetch_ipconfig(WLanConfig* config)
+int wlan_fetch_ipconfig(WLanConfig* config)
 {
     wiced_ip_address_t addr;
     wiced_interface_t ifup = WICED_STA_INTERFACE;
@@ -1366,6 +1375,8 @@ void wlan_fetch_ipconfig(WLanConfig* config)
         }
     }
     // todo DNS and DHCP servers
+
+    return 0;
 }
 
 void SPARK_WLAN_SmartConfigProcess()

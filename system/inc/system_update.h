@@ -39,7 +39,7 @@ struct system_file_transfer_t {
     FileTransfer::Descriptor descriptor;
 };
 
-STATIC_ASSERT(system_file_transfer_size, sizeof(system_file_transfer_t)==sizeof(FileTransfer::Descriptor)+8 || sizeof(void*)!=4);
+PARTICLE_STATIC_ASSERT(system_file_transfer_size, sizeof(system_file_transfer_t)==sizeof(FileTransfer::Descriptor)+8 || sizeof(void*)!=4);
 
 bool system_fileTransfer(system_file_transfer_t* transfer, void* reserved=NULL);
 
@@ -112,10 +112,9 @@ typedef enum
 
     /**
      * A persistent flag that when set will cause the system to startup
-     * in listening mode if booting in safe mode. The flag is automatically
-     * cleared on reboot.
+     * in listening mode. The flag is automatically cleared on reboot.
      */
-    SYSTEM_FLAG_STARTUP_SAFE_LISTEN_MODE,
+    SYSTEM_FLAG_STARTUP_LISTEN_MODE,
 
 	/**
 	 * Enable/Disable use of serial1 during setup.
@@ -134,6 +133,17 @@ typedef enum
      */
     SYSTEM_FLAG_RESET_NETWORK_ON_CLOUD_ERRORS,
 
+    /**
+     * Enable/Disable runtime power management peripheral detection
+     */
+    SYSTEM_FLAG_PM_DETECTION,
+
+	/**
+	 * When 0, OTA updates are only applied when SYSTEM_FLAG_OTA_UPDATE_ENABLED is set.
+	 * When 1, OTA updates are applied irrespective of the value of SYSTEM_FLAG_OTA_UPDATE_ENABLED.
+	 */
+    SYSTEM_FLAG_OTA_UPDATE_FORCED,
+
     SYSTEM_FLAG_MAX
 
 } system_flag_t;
@@ -144,6 +154,7 @@ void system_pending_shutdown();
 
 int system_set_flag(system_flag_t flag, uint8_t value, void* reserved);
 int system_get_flag(system_flag_t flag, uint8_t* value,void* reserved);
+int system_refresh_flag(system_flag_t flag);
 
 /**
  * Formats the diagnostic data using an appender function.

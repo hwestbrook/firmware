@@ -396,7 +396,7 @@ static const char* const _log_category = NULL;
 #define LOG_DUMP_C(_level, _category, _data, _size)
 #define LOG_ENABLED_C(_level, _category) (0)
 
-#endif
+#endif // not LOG_DISABLE
 
 #ifdef DEBUG_BUILD
 #define LOG_DEBUG_C(_level, _category, _fmt, ...) LOG_C(_level, _category, _fmt, ##__VA_ARGS__)

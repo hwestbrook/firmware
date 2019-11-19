@@ -19,6 +19,8 @@
 
 #ifdef USB_VENDOR_REQUEST_ENABLE
 
+#include "system_cloud_connection.h"
+#include "system_network.h"
 #include "system_task.h"
 #include "system_threading.h"
 
@@ -29,6 +31,10 @@
 #include "test_malloc.h"
 #include "bytes2hexbuf.h"
 #include "debug.h"
+
+// FIXME: we should not be polluting our code with such generic macro names
+#undef RESET
+#undef SET
 
 namespace {
 
@@ -159,6 +165,27 @@ inline bool isServiceRequestType(uint8_t bRequest) {
     return (bRequest >= 0x01 && bRequest <= 0x0f);
 }
 
+// Note: This function is called from an ISR
+inline void cancelNetworkConnectionIfNeeded(uint16_t type) {
+    switch (type) {
+    case CTRL_REQUEST_RESET:
+    case CTRL_REQUEST_FACTORY_RESET:
+    case CTRL_REQUEST_DFU_MODE:
+    case CTRL_REQUEST_SAFE_MODE:
+    case CTRL_REQUEST_START_LISTENING: {
+        network_connect_cancel(NETWORK_INTERFACE_ALL, 1, 0, nullptr); // Cancel network connection attempt
+        Spark_Abort(); // Abort cloud connection
+        if (type != CTRL_REQUEST_START_LISTENING) {
+            // Prevent the system from reconnecting to the cloud if the device is going to be reset
+            spark_cloud_flag_disconnect();
+        }
+        break;
+    }
+    default:
+        break;
+    }
+}
+
 } // namespace
 
 particle::UsbControlRequestChannel::UsbControlRequestChannel(ControlRequestHandler* handler) :
@@ -283,6 +310,9 @@ bool particle::UsbControlRequestChannel::processInitRequest(HAL_USB_SetupRequest
         req->request_data = nullptr;
         req->state = RequestState::PENDING;
         status = ServiceReply::OK;
+        // Depending on the request type, we may need to abort the network connection in order to
+        // unblock the system thread and process the request as quickly as possible
+        cancelNetworkConnectionIfNeeded(req->type);
     } else if (req->request_size <= USB_REQUEST_MAX_POOLED_BUFFER_SIZE &&
             (req->request_data = (char*)system_pool_alloc(req->request_size, nullptr))) {
         // Device is ready to receive payload data

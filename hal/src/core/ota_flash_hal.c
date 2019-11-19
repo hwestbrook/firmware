@@ -75,6 +75,12 @@ hal_update_complete_t HAL_FLASH_End(hal_module_t* reserved)
     return HAL_UPDATE_APPLIED_PENDING_RESTART;
 }
 
+hal_update_complete_t HAL_FLASH_ApplyPendingUpdate(hal_module_t* module, bool dryRun, void* reserved)
+{
+    // Not implemented for Core
+    return HAL_UPDATE_ERROR;
+}
+
 void HAL_FLASH_Read_ServerAddress(ServerAddress* server_addr)
 {
     uint8_t buf[EXTERNAL_FLASH_SERVER_DOMAIN_LENGTH];
@@ -138,4 +144,6 @@ bool HAL_IsDeviceClaimed(void* reserved)
 	return false;
 }
 
-
+void HAL_OTA_Add_System_Info(hal_system_info_t* info, bool create, void* reserved)
+{
+}

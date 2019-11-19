@@ -21,9 +21,12 @@ void DTLSProtocol::init(const char *id,
 	channelCallbacks.receive = callbacks.receive;
 	channelCallbacks.send = callbacks.send;
 	channelCallbacks.calculate_crc = callbacks.calculate_crc;
-	if (callbacks.size>=52) {
+	if (callbacks.size>=52) {   // todo - get rid of this magic number and define it by the size of some struct.
 		channelCallbacks.save = callbacks.save;
 		channelCallbacks.restore = callbacks.restore;
+	}
+	if (offsetof(SparkCallbacks, notify_client_messages_processed) + sizeof(SparkCallbacks::notify_client_messages_processed) <= callbacks.size) {
+		channelCallbacks.notify_client_messages_processed = callbacks.notify_client_messages_processed;
 	}
 
 	channel.set_millis(callbacks.millis);
@@ -75,6 +78,12 @@ int DTLSProtocol::wait_confirmable(uint32_t timeout)
 	LOG(INFO, "All Confirmed messages sent: client(%s) server(%s)",
 		channel.client_messages().has_messages() ? "no" : "yes",
 		channel.server_messages().has_unacknowledged_requests() ? "no" : "yes");
+
+	if (err == ProtocolError::NO_ERROR && channel.has_unacknowledged_requests())
+	{
+		err = ProtocolError::MESSAGE_TIMEOUT;
+		LOG(WARN, "Timeout while waiting for confirmable messages to be processed");
+	}
 
 	return (int)err;
 }

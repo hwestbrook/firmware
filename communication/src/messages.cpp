@@ -93,6 +93,7 @@ CoAPMessageType::Enum Messages::decodeType(const uint8_t* buf, size_t length)
 			return CoAPMessageType::EMPTY_ACK;
 		}
 		break;
+	// todo - we should look at the original request (via the token) to determine the type of the response.
 	case CoAPCode::CONTENT:
 		return CoAPMessageType::TIME;
 	default:
@@ -105,6 +106,7 @@ size_t Messages::hello(uint8_t* buf, message_id_t message_id, uint8_t flags,
 		uint16_t platform_id, uint16_t product_id,
 		uint16_t product_firmware_version, bool confirmable, const uint8_t* device_id, uint16_t device_id_len)
 {
+	// TODO: why no token? because the response is not sent separately. But really we should use a token for all messages that expect a response.
 	buf[0] = COAP_MSG_HEADER(confirmable ? CoAPType::CON : CoAPType::NON, 0);
 	buf[1] = 0x02; // POST
 	buf[2] = message_id >> 8;
@@ -134,6 +136,7 @@ size_t Messages::hello(uint8_t* buf, message_id_t message_id, uint8_t flags,
 
 size_t Messages::update_done(uint8_t* buf, message_id_t message_id, const uint8_t* result, size_t result_len, bool confirmable)
 {
+	// why not with a token? this is sent in response to the server's UpdateDone message.
 	size_t sz = 6;
 	buf[0] = confirmable ? 0x40 : 0x50; // confirmable/non-confirmable, no token
 	buf[1] = 0x03; // PUT
@@ -275,6 +278,30 @@ size_t Messages::presence_announcement(unsigned char *buf, const char *id)
 	return 19;
 }
 
+size_t Messages::describe_post_header(uint8_t buf[], size_t buffer_size, uint16_t message_id, uint8_t desc_flags)
+{
+	const size_t header_size = 9;
+
+	size_t bytes_written;
+
+	if ( buffer_size < header_size ) {
+		bytes_written = 0;
+	} else {
+		buf[0] = 0x40; // Confirmable, no token
+		buf[1] = 0x02; // Type POST
+		buf[2] = message_id >> 8;
+		buf[3] = message_id & 0xff;
+		buf[4] = 0xb1; // Uri-Path option of length 1
+		buf[5] = 'd';
+		buf[6] = 0x41; // Uri-Query option of length 1
+		buf[7] = desc_flags;
+		buf[8] = 0xff; // payload marker
+		bytes_written = header_size;
+	}
+
+	return bytes_written;
+}
+
 size_t Messages::separate_response_with_payload(unsigned char *buf, uint16_t message_id,
 		unsigned char token, unsigned char code, unsigned char* payload,
 		unsigned payload_len, bool confirmable)
@@ -286,7 +313,6 @@ size_t Messages::separate_response_with_payload(unsigned char *buf, uint16_t mes
 	buf[4] = token;
 
 	size_t len = 5;
-	// for now, assume the payload is less than 9
 	if (payload && payload_len)
 	{
 		buf[5] = 0xFF;
@@ -307,7 +333,7 @@ size_t Messages::event(uint8_t buf[], uint16_t message_id, const char *event_nam
   *p++ = 0xb1; // one-byte Uri-Path option
   *p++ = event_type;
 
-  size_t name_data_len = strnlen(event_name, 63);
+  size_t name_data_len = strnlen(event_name, MAX_EVENT_NAME_LENGTH);
   p += event_name_uri_path(p, event_name, name_data_len);
 
   if (60 != ttl)
@@ -320,7 +346,7 @@ size_t Messages::event(uint8_t buf[], uint16_t message_id, const char *event_nam
 
   if (NULL != data)
   {
-    name_data_len = strnlen(data, 255);
+    name_data_len = strnlen(data, MAX_EVENT_DATA_LENGTH);
 
     *p++ = 0xff;
     memcpy(p, data, name_data_len);
