@@ -29,8 +29,8 @@
 #include "border_router_manager.h"
 #include <malloc.h>
 #include "esp32_ncp_client.h"
-#include "wifi_network_manager.h"
-#include "ncp.h"
+#include "network/ncp/wifi/wifi_network_manager.h"
+#include "network/ncp/wifi/ncp.h"
 #include "debug.h"
 #include "esp32/esp32ncpnetif.h"
 #include "lwip_util.h"
@@ -129,11 +129,7 @@ int if_init_platform(void*) {
     }
 
     if (HAL_Feature_Get(FEATURE_ETHERNET_DETECTION)) {
-#if PLATFORM_ID == PLATFORM_ARGON
         en2 = new WizNetif(HAL_SPI_INTERFACE1, D5, D3, D4, mac);
-#else // A SoM
-        en2 = new WizNetif(HAL_SPI_INTERFACE1, D8, A7, D22, mac);
-#endif
     }
 
     uint8_t dummy;

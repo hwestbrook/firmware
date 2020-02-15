@@ -1,15 +1,15 @@
 #!/bin/bash
 set -o errexit -o pipefail -o noclobber -o nounset
 
-VERSION="1.4.4"
+VERSION="1.5.0-rc.1"
 
 function display_help ()
 {
     echo '
 usage: release.sh [--output-directory=<binary_output_directory>]
-                  (--platform=<argon|asom|boron|bsom...
-                  |core|electron|p1|photon|xenon|xsom>...
-                  | --platform-id=<0|6|8|10|12|13|14|22|23|24>)
+                  (--platform=<argon|boron|bsom...
+                  |b5som|electron|p1|photon|xenon>...
+                  | --platform-id=<6|8|10|12|13|14|23|25>)
                   [--debug] [--help] [--tests]
 
 Generate the binaries for a versioned release of the Device OS. This utility
@@ -210,11 +210,6 @@ if [ -z $PLATFORM ] && [ -z $PLATFORM_ID ]; then
     exit 5
 elif [ ! -z $PLATFORM ]; then
     case "$PLATFORM" in
-        "core")
-            PLATFORM_ID="0"
-            MESH=false
-            PLATFORM_MODULAR=false
-            ;;
         "photon")
             PLATFORM_ID="6"
             MESH=false
@@ -239,16 +234,12 @@ elif [ ! -z $PLATFORM ]; then
             PLATFORM_ID="14"
             MESH=true
             ;;
-        "asom")
-            PLATFORM_ID="22"
-            MESH=true
-            ;;
         "bsom")
             PLATFORM_ID="23"
             MESH=true
             ;;
-        "xsom")
-            PLATFORM_ID="24"
+        "b5som")
+            PLATFORM_ID="25"
             MESH=true
             ;;
         *)
@@ -258,11 +249,6 @@ elif [ ! -z $PLATFORM ]; then
     esac
 else
     case "$PLATFORM_ID" in
-        0)
-            PLATFORM="core"
-            MESH=false
-            PLATFORM_MODULAR=false
-            ;;
         6)
             PLATFORM="photon"
             MESH=false
@@ -287,16 +273,12 @@ else
             PLATFORM="xenon"
             MESH=true
             ;;
-        22)
-            PLATFORM="asom"
-            MESH=true
-            ;;
         23)
             PLATFORM="bsom"
             MESH=true
             ;;
-        24)
-            PLATFORM="xsom"
+        25)
+            PLATFORM="b5som"
             MESH=true
             ;;
         *)
@@ -338,24 +320,8 @@ rm -rf $ABSOLUTE_TARGET_DIRECTORY/
 # Build Platform System #
 #########################
 
-# Core (0)
-if [ $PLATFORM_ID -eq 0 ]; then
-    # Configure
-    cd ../main
-    DEBUG_BUILD="n"
-    MODULAR="n"
-
-    # Compose, echo and execute the `make` command
-    MAKE_COMMAND="make -s clean all PLATFORM_ID=$PLATFORM_ID COMPILE_LTO=y DEBUG_BUILD=$DEBUG_BUILD MODULAR=$MODULAR USE_SWD_JTAG=$USE_SWD_JTAG USE_SWD=n APP=tinker"
-    echo $MAKE_COMMAND
-    eval $MAKE_COMMAND
-
-    # Migrate file(s) into output interface
-    release_binary "main" "tinker" "-lto" "$DEBUG_BUILD" "$USE_SWD_JTAG"
-    cd ../modules
-
 # Photon (6), P1 (8)
-elif [ $PLATFORM_ID -eq 6 ] || [ $PLATFORM_ID -eq 8 ]; then
+if [ $PLATFORM_ID -eq 6 ] || [ $PLATFORM_ID -eq 8 ]; then
     # Configure
     if [ $DEBUG = true ]; then
         cd ../main
@@ -409,7 +375,7 @@ elif [ $PLATFORM_ID -eq 10 ]; then
     done
 
 # Mesh
-elif [ $PLATFORM_ID -eq 12 ] || [ $PLATFORM_ID -eq 13 ] || [ $PLATFORM_ID -eq 14 ] || [ $PLATFORM_ID -eq 22 ] || [ $PLATFORM_ID -eq 23 ] || [ $PLATFORM_ID -eq 24 ]; then
+elif [ $PLATFORM_ID -eq 12 ] || [ $PLATFORM_ID -eq 13 ] || [ $PLATFORM_ID -eq 14 ] || [ $PLATFORM_ID -eq 23 ] || [ $PLATFORM_ID -eq 25 ]; then
     # Configure
     if [ $DEBUG = true ]; then
         cd ../main

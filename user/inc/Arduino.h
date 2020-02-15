@@ -16,11 +16,11 @@
 #define ARDUINO 10800
 #endif
 
-#include "math.h"
+#include <math.h>
 
-#ifndef isnan
-#error isnan is not defined please ensure this header is included before any STL headers
-#endif
+// #ifndef isnan
+// #error isnan is not defined please ensure this header is included before any STL headers
+// #endif
 
 
 #include "avr/pgmspace.h"
@@ -97,7 +97,7 @@ inline void yield() {
 #endif
 
 // XXX
-#if PLATFORM_ID == PLATFORM_SPARK_CORE || PLATFORM_ID == PLATFORM_PHOTON_PRODUCTION || PLATFORM_ID == PLATFORM_P1 || PLATFORM_ID == PLATFORM_ELECTRON_PRODUCTION
+#if PLATFORM_ID == PLATFORM_PHOTON_PRODUCTION || PLATFORM_ID == PLATFORM_P1 || PLATFORM_ID == PLATFORM_ELECTRON_PRODUCTION
 
 # ifndef digitalPinToPort
 # define digitalPinToPort(P)        ( HAL_Pin_Map()[P].gpio_peripheral )
@@ -146,7 +146,7 @@ inline void yield() {
 # define digitalPinHasPWM(P)        ( HAL_Validate_Pin_Function(P, PF_TIMER) == PF_TIMER )
 # endif
 
-#endif // PLATFORM_ID == PLATFORM_SPARK_CORE || PLATFORM_ID == PLATFORM_PHOTON_PRODUCTION || PLATFORM_ID == PLATFORM_P1 || PLATFORM_ID == PLATFORM_ELECTRON_PRODUCTION
+#endif // PLATFORM_ID == PLATFORM_PHOTON_PRODUCTION || PLATFORM_ID == PLATFORM_P1 || PLATFORM_ID == PLATFORM_ELECTRON_PRODUCTION
 
 #ifndef _BV
 #define _BV(x)  (((uint32_t)1) << (x))
@@ -177,7 +177,7 @@ typedef volatile uint32_t RwReg;
 // Pins
 
 // LED
-#if PLATFORM_ID == PLATFORM_SPARK_CORE || PLATFORM_ID == PLATFORM_PHOTON_PRODUCTION || \
+#if PLATFORM_ID == PLATFORM_PHOTON_PRODUCTION || \
     PLATFORM_ID == PLATFORM_P1 || PLATFORM_ID == PLATFORM_ELECTRON_PRODUCTION || \
     HAL_PLATFORM_MESH
 # ifndef LED_BUILTIN
@@ -188,7 +188,7 @@ typedef volatile uint32_t RwReg;
 # define ATN SS
 # endif
 
-#endif // PLATFORM_ID == PLATFORM_SPARK_CORE || PLATFORM_ID == PLATFORM_PHOTON_PRODUCTION ||
+#endif // PLATFORM_ID == PLATFORM_PHOTON_PRODUCTION ||
        // PLATFORM_ID == PLATFORM_P1 || PLATFORM_ID == PLATFORM_ELECTRON_PRODUCTION ||
        // HAL_PLATFORM_MESH
 
@@ -196,11 +196,11 @@ typedef volatile uint32_t RwReg;
 #ifdef __cplusplus
 
 #ifndef isnan
-using std::isnan
+using std::isnan;
 #endif
 
 #ifndef isinf
-using std::isinf
+using std::isinf;
 #endif
 
 

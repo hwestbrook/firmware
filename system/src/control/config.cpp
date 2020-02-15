@@ -41,9 +41,9 @@
 #endif
 
 #if HAL_PLATFORM_NCP
-#include "network/ncp.h"
-#include "wifi_network_manager.h"
-#include "wifi_ncp_client.h"
+#include "network/ncp/wifi/ncp.h"
+#include "network/ncp/wifi/wifi_network_manager.h"
+#include "network/ncp/wifi/wifi_ncp_client.h"
 #endif
 
 #include "config.pb.h"
@@ -244,6 +244,15 @@ int getFeature(ctrl_request* req) {
         return SYSTEM_ERROR_NOT_SUPPORTED;
     }
     CHECK(encodeReplyMessage(req, PB(GetFeatureReply_fields), &pbRep));
+    return 0;
+}
+
+int echo(ctrl_request* req) {
+    const int ret = system_ctrl_alloc_reply_data(req, req->request_size, nullptr);
+    if (ret != 0) {
+        return ret;
+    }
+    memcpy(req->reply_data, req->request_data, req->request_size);
     return 0;
 }
 

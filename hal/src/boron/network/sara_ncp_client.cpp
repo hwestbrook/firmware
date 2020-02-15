@@ -20,7 +20,7 @@
 
 #include "at_command.h"
 #include "at_response.h"
-#include "network_config_db.h"
+#include "network/ncp/cellular/network_config_db.h"
 
 #include "serial_stream.h"
 #include "check.h"
@@ -38,6 +38,9 @@
 #include "spark_wiring_vector.h"
 
 #include <algorithm>
+
+#undef LOG_COMPILE_TIME_LEVEL
+#define LOG_COMPILE_TIME_LEVEL LOG_LEVEL_ALL
 
 #define CHECK_PARSER(_expr) \
         ({ \
@@ -80,7 +83,7 @@ inline system_tick_t millis() {
 }
 
 const auto UBLOX_NCP_DEFAULT_SERIAL_BAUDRATE = 115200;
-const auto UBLOX_NCP_RUNTIME_SERIAL_BAUDRATE_U2 = 921600;
+const auto UBLOX_NCP_RUNTIME_SERIAL_BAUDRATE_U2 = 115200;
 
 const auto UBLOX_NCP_MAX_MUXER_FRAME_SIZE = 1509;
 const auto UBLOX_NCP_KEEPALIVE_PERIOD = 5000; // milliseconds
@@ -137,6 +140,7 @@ int SaraNcpClient::init(const NcpClientConfig& conf) {
     memoryIssuePresent_ = false;
     parserError_ = 0;
     ready_ = false;
+    registrationTimeout_ = REGISTRATION_TIMEOUT;
     resetRegistrationState();
     return 0;
 }
@@ -987,6 +991,11 @@ int SaraNcpClient::configureApn(const CellularNetworkConfig& conf) {
     return 0;
 }
 
+int SaraNcpClient::setRegistrationTimeout(unsigned timeout) {
+    registrationTimeout_ = std::max(timeout, REGISTRATION_TIMEOUT);
+    return 0;
+}
+
 int SaraNcpClient::registerNet() {
     int r = 0;
     if (conf_.ncpIdentifier() != PLATFORM_NCP_SARA_R410) {
@@ -1002,8 +1011,9 @@ int SaraNcpClient::registerNet() {
     connectionState(NcpConnectionState::CONNECTING);
     registeredTime_ = 0;
 
-    // NOTE: up to 3 mins
-    r = CHECK_PARSER(parser_.execCommand(3 * 60 * 1000, "AT+COPS=0,2"));
+    // NOTE: up to 3 mins (FIXME: there seems to be a bug where this timeout of 3 minutes
+    //       is not being respected by u-blox modems.  Setting to 5 for now.)
+    r = CHECK_PARSER(parser_.execCommand(5 * 60 * 1000, "AT+COPS=0,2"));
     // Ignore response code here
     // CHECK_TRUE(r == AtResponse::OK, SYSTEM_ERROR_AT_NOT_OK);
 
@@ -1160,7 +1170,7 @@ int SaraNcpClient::processEventsImpl() {
         CHECK_PARSER_OK(parser_.execCommand("AT+CEREG?"));
     }
     if (connState_ == NcpConnectionState::CONNECTING &&
-            millis() - regStartTime_ >= REGISTRATION_TIMEOUT) {
+            millis() - regStartTime_ >= registrationTimeout_) {
         LOG(WARN, "Resetting the modem due to the network registration timeout");
         muxer_.stop();
         int rv = modemPowerOff();

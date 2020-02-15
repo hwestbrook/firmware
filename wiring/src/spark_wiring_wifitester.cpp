@@ -152,15 +152,7 @@ struct varstring_t {
     char string[33];
 };
 
-#if PLATFORM_ID>3
 extern "C" bool fetch_or_generate_setup_ssid(varstring_t* result);
-#else // PLATFORM <= 3
-extern "C" bool fetch_or_generate_setup_ssid(varstring_t* result) {
-    result->len = 4;
-    strcpy(result->string, "CORE-1234");
-    return true;
-}
-#endif
 
 bool WiFiTester::isPowerOn() {
     return power_state;
@@ -399,6 +391,7 @@ void WiFiTester::checkWifiSerial(char c) {
             }
             if (ok) {
                 if (!strcmp("ALL", parts[1])) {
+                    // FIXME: review the range of pins here
 #if HAL_PLATFORM_NRF52840
                     setPinOutputRange(A0, A5, pinValue);
                     setPinOutputRange(D0, D8, pinValue);

@@ -19,7 +19,7 @@
 #endif // #ifndef USE_CS
 
 #if HAL_PLATFORM_NRF52840
-#if (PLATFORM_ID == PLATFORM_ASOM) || (PLATFORM_ID == PLATFORM_BSOM) || (PLATFORM_ID == PLATFORM_XSOM)
+#if (PLATFORM_ID == PLATFORM_BSOM) || (PLATFORM_ID == PLATFORM_B5SOM)
 
 #if (USE_SPI == 0 || USE_SPI == 255) // default to SPI
 #define MY_SPI SPI
@@ -30,7 +30,7 @@
 #define MY_CS D5
 #pragma message "Compiling for SPI1, MY_CS set to D5"
 #elif (USE_SPI == 2)
-#error "SPI2 not supported for xsom, asom or bsom"
+#error "SPI2 not supported for bsom and b5som"
 #else
 #error "Not supported for Gen 3"
 #endif // (USE_SPI == 0 || USE_SPI == 255)
@@ -51,7 +51,7 @@
 #error "Not supported for Gen 3"
 #endif // (USE_SPI == 0 || USE_SPI == 255)
 
-#endif // #if (PLATFORM_ID == PLATFORM_ASOM) || (PLATFORM_ID == PLATFORM_BSOM) || (PLATFORM_ID == PLATFORM_XSOM)
+#endif // #if (PLATFORM_ID == PLATFORM_BSOM) || (PLATFORM_ID == PLATFORM_B5SOM)
 
 #else // Gen 2
 
@@ -257,8 +257,13 @@ void SPI_Master_Slave_Master_Test_Routine(std::function<void(uint8_t*, uint8_t*,
         memset(SPI_Master_Rx_Buffer, 0, sizeof(SPI_Master_Rx_Buffer));
 
         // Select
+        // Workaround for some platforms requiring the CS to be high when configuring
+        // the DMA buffers
         digitalWrite(MY_CS, LOW);
         delay(SPI_DELAY);
+        digitalWrite(MY_CS, HIGH);
+        delay(SPI_DELAY);
+        digitalWrite(MY_CS, LOW);
 
         memcpy(SPI_Master_Tx_Buffer, MASTER_TEST_MESSAGE, sizeof(MASTER_TEST_MESSAGE));
         memcpy(SPI_Master_Tx_Buffer + sizeof(MASTER_TEST_MESSAGE), (void*)&requestedLength, sizeof(uint32_t));

@@ -16,7 +16,7 @@
 #endif // #ifndef USE_CS
 
 #if HAL_PLATFORM_NRF52840
-#if (PLATFORM_ID == PLATFORM_ASOM) || (PLATFORM_ID == PLATFORM_BSOM) || (PLATFORM_ID == PLATFORM_XSOM)
+#if (PLATFORM_ID == PLATFORM_BSOM) || (PLATFORM_ID == PLATFORM_B5SOM)
 
 #if (USE_SPI == 0 || USE_SPI == 255) // default to SPI
 #define MY_SPI SPI
@@ -27,7 +27,7 @@
 #define MY_CS D5
 #pragma message "Compiling for SPI1, MY_CS set to D5"
 #elif (USE_SPI == 2)
-#error "SPI2 not supported for xsom, asom or bsom"
+#error "SPI2 not supported for bsom and b5som"
 #else
 #error "Not supported for Gen 3"
 #endif // (USE_SPI == 0 || USE_SPI == 255)
@@ -48,7 +48,7 @@
 #error "Not supported for Gen 3"
 #endif // (USE_SPI == 0 || USE_SPI == 255)
 
-#endif // #if (PLATFORM_ID == PLATFORM_ASOM) || (PLATFORM_ID == PLATFORM_BSOM) || (PLATFORM_ID == PLATFORM_XSOM)
+#endif // #if (PLATFORM_ID == PLATFORM_BSOM) || (PLATFORM_ID == PLATFORM_B5SOM)
 
 #else // Gen 2
 
@@ -228,8 +228,8 @@ test(SPI_Master_Slave_Slave_Transfer)
         /* IMPORTANT: NOT waiting for Master to select us, as some of the platforms
          * require TX and RX buffers to be configured before CS goes low
          */
-        // while(SPI_Selected_State == 0);
-        // SPI_Selected_State = 0;
+        while(SPI_Selected_State == 0);
+        SPI_Selected_State = 0;
 
         /* Receive up to TRANSFER_LENGTH_2 bytes */
         SPI_Transfer_DMA(SPI_Slave_Tx_Buffer, SPI_Slave_Rx_Buffer, TRANSFER_LENGTH_2, count % 2 == 0 ? &SPI_DMA_Completed_Callback : NULL);

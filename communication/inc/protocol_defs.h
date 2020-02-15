@@ -50,6 +50,9 @@ enum ProtocolError
     /* 24 */ IO_ERROR_LIGHTSSL_HANDSHAKE_NONCE,
     /* 25 */ IO_ERROR_LIGHTSSL_HANDSHAKE_RECV_KEY,
     /* 26 */ NOT_IMPLEMENTED,
+    /* 27 */ MISSING_REQUEST_TOKEN,
+    /* 28 */ NOT_FOUND,
+    /* 29 */ NO_MEMORY,
 
     /*
      * NOTE: when adding more ProtocolError codes, be sure to update toSystemError() in protocol_defs.cpp
@@ -68,29 +71,17 @@ const size_t MISSED_CHUNKS_TO_SEND    = 40u;
 const size_t MINIMUM_CHUNK_INCREASE   = 2u;
 const size_t MAX_EVENT_TTL_SECONDS    = 16777215;
 const size_t MAX_OPTION_DELTA_LENGTH  = 12;
-#if PLATFORM_ID<2
-    const size_t MAX_FUNCTION_ARG_LENGTH = 64;
-    const size_t MAX_FUNCTION_KEY_LENGTH = 12;
-    const size_t MAX_VARIABLE_KEY_LENGTH = 12;
-    const size_t MAX_EVENT_NAME_LENGTH   = 64;
-    const size_t MAX_EVENT_DATA_LENGTH   = 255;
-#else
-    const size_t MAX_FUNCTION_ARG_LENGTH = 622;
-    const size_t MAX_FUNCTION_KEY_LENGTH = 64;
-    const size_t MAX_VARIABLE_KEY_LENGTH = 64;
-    const size_t MAX_EVENT_NAME_LENGTH   = 64;
-    const size_t MAX_EVENT_DATA_LENGTH   = 622;
-#endif
+const size_t MAX_FUNCTION_ARG_LENGTH = 622;
+const size_t MAX_FUNCTION_KEY_LENGTH = 64;
+const size_t MAX_VARIABLE_KEY_LENGTH = 64;
+const size_t MAX_EVENT_NAME_LENGTH   = 64;
+const size_t MAX_EVENT_DATA_LENGTH   = 622;
 
 // Timeout in milliseconds given to receive an acknowledgement for a published event
 const unsigned SEND_EVENT_ACK_TIMEOUT = 20000;
 
 #ifndef PROTOCOL_BUFFER_SIZE
-    #if PLATFORM_ID<2
-        #define PROTOCOL_BUFFER_SIZE 640
-    #else
-        #define PROTOCOL_BUFFER_SIZE 800
-    #endif
+    #define PROTOCOL_BUFFER_SIZE 800
 #endif
 
 

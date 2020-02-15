@@ -14,7 +14,6 @@ INCLUDE_DIRS += $(TARGET_SRC_PATH)
 # C++ source files included in this build.
 CPPSRC += $(TARGET_SRC_PATH)/coap.cpp
 CPPSRC += $(TARGET_SRC_PATH)/handshake.cpp
-CPPSRC += $(TARGET_SRC_PATH)/core_protocol.cpp
 CPPSRC += $(TARGET_SRC_PATH)/events.cpp
 CPPSRC += $(TARGET_SRC_PATH)/spark_protocol_functions.cpp
 CPPSRC += $(TARGET_SRC_PATH)/communication_dynalib.cpp
@@ -33,6 +32,7 @@ CPPSRC += $(TARGET_SRC_PATH)/protocol_defs.cpp
 CPPSRC += $(TARGET_SRC_PATH)/mbedtls_communication.cpp
 CPPSRC += $(TARGET_SRC_PATH)/communication_diagnostic.cpp
 CPPSRC += $(TARGET_SRC_PATH)/mesh.cpp
+CPPSRC += $(TARGET_SRC_PATH)/variables.cpp
 
 # ASM source files included in this build.
 ASRC +=
@@ -45,7 +45,7 @@ ifeq ($(PLATFORM_ID),8)
 CFLAGS += -DLOG_COMPILE_TIME_LEVEL=LOG_LEVEL_NONE
 endif
 
-ifneq (,$(filter $(PLATFORM_ID), 13 23))
+ifneq (,$(filter $(PLATFORM_ID), 13 23 25))
 ifneq ($(DEBUG_BUILD),y)
 ifneq ($(HYBRID_BUILD),y)
 CFLAGS += -DLOG_COMPILE_TIME_LEVEL=LOG_LEVEL_ERROR

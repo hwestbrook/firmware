@@ -257,44 +257,53 @@ void BleAddress::toBigEndian(uint8_t buf[BLE_SIG_ADDR_LEN]) const {
  * BleUuid class
  */
 BleUuid::BleUuid()
-        : uuid_() {
+        : type_(BleUuidType::LONG) {
+    memcpy(uuid128_, BASE_UUID, BLE_SIG_UUID_128BIT_LEN);
 }
 
 BleUuid::BleUuid(const hal_ble_uuid_t& uuid) {
-    uuid_ = uuid;
+    if (uuid.type == BLE_UUID_TYPE_16BIT || uuid.type == BLE_UUID_TYPE_128BIT_SHORTED) {
+        type_ = BleUuidType::SHORT;
+        memcpy(uuid128_, BASE_UUID, BLE_SIG_UUID_128BIT_LEN);
+        uuid128_[UUID16_LO] = (uint8_t)uuid.uuid16;
+        uuid128_[UUID16_HI] = (uint8_t)(uuid.uuid16 >> 8);
+    } else {
+        type_ = BleUuidType::LONG;
+        memcpy(uuid128_, uuid.uuid128, BLE_SIG_UUID_128BIT_LEN);
+    }
 }
 
 BleUuid::BleUuid(const BleUuid& uuid)
-        : uuid_(uuid.uuid_) {
+        : type_(uuid.type_) {
+    memcpy(uuid128_, uuid.uuid128_, BLE_SIG_UUID_128BIT_LEN);
 }
 
-BleUuid::BleUuid(const uint8_t* uuid128, BleUuidOrder order)
-        : BleUuid() {
-    if (!uuid128) {
-        memset(uuid_.uuid128, 0x00, BLE_SIG_UUID_128BIT_LEN);
-    } else {
+BleUuid::BleUuid(const uint8_t* uuid128, BleUuidOrder order) {
+    if (uuid128) {
         if (order == BleUuidOrder::LSB) {
-            memcpy(uuid_.uuid128, uuid128, BLE_SIG_UUID_128BIT_LEN);
+            memcpy(uuid128_, uuid128, BLE_SIG_UUID_128BIT_LEN);
         } else {
             for (uint8_t i = 0, j = BLE_SIG_UUID_128BIT_LEN - 1; i < BLE_SIG_UUID_128BIT_LEN; i++, j--) {
-                uuid_.uuid128[i] = uuid128[j];
+                uuid128_[i] = uuid128[j];
             }
         }
-        uuid_.type = BLE_UUID_TYPE_128BIT;
+        type_ = BleUuidType::LONG;
+    } else {
+        memset(uuid128_, 0x00, BLE_SIG_UUID_128BIT_LEN);
     }
 }
 
 BleUuid::BleUuid(uint16_t uuid16)
         : BleUuid() {
-    uuid_.uuid16 = uuid16;
-    uuid_.type = BLE_UUID_TYPE_16BIT;
+    type_ = BleUuidType::SHORT;
+    uuid128_[UUID16_LO] = (uint8_t)(uuid16 & 0x00FF);
+    uuid128_[UUID16_HI] = (uint8_t)((uuid16 >> 8) & 0x00FF);
 }
 
 BleUuid::BleUuid(const uint8_t* uuid128, uint16_t uuid16, BleUuidOrder order)
         : BleUuid(uuid128, order) {
-    uuid_.uuid128[12] = (uint8_t)(uuid16 & 0x00FF);
-    uuid_.uuid128[13] = (uint8_t)((uuid16 >> 8) & 0x00FF);
-    uuid_.type = BLE_UUID_TYPE_128BIT;
+    uuid128_[UUID16_LO] = (uint8_t)(uuid16 & 0x00FF);
+    uuid128_[UUID16_HI] = (uint8_t)((uuid16 >> 8) & 0x00FF);
 }
 
 BleUuid::BleUuid(const char* uuid)
@@ -308,35 +317,39 @@ BleUuid::BleUuid(const String& uuid)
 
 bool BleUuid::isValid() const {
     if (type() == BleUuidType::SHORT) {
-        return uuid_.uuid16 != 0x0000;
+        return (uuid128_[UUID16_LO] != 0x00 || uuid128_[UUID16_HI] != 0x00);
     } else {
-        uint8_t temp[BLE_SIG_UUID_128BIT_LEN] = {};
-        return memcmp(uuid_.uuid128, temp, BLE_SIG_UUID_128BIT_LEN);
+        return memcmp(uuid128_, BASE_UUID, BLE_SIG_UUID_128BIT_LEN);
     }
 }
 
 BleUuidType BleUuid::type() const {
-    if (uuid_.type == BLE_UUID_TYPE_16BIT || uuid_.type == BLE_UUID_TYPE_128BIT_SHORTED) {
-        return BleUuidType::SHORT;
-    } else {
-        return BleUuidType::LONG;
-    }
+    return type_;
 }
 
 hal_ble_uuid_t BleUuid::halUUID() {
-    return uuid_;
+    hal_ble_uuid_t uuid = {};
+    if (type_ == BleUuidType::SHORT) {
+        uuid.type = BLE_UUID_TYPE_16BIT;
+        uuid.uuid16 = (uint16_t)uuid128_[UUID16_LO] | ((uint16_t)uuid128_[UUID16_HI] << 8);
+    } else {
+        uuid.type = BLE_UUID_TYPE_128BIT;
+        memcpy(uuid.uuid128, uuid128_, BLE_SIG_UUID_128BIT_LEN);
+    }
+    return uuid;
 }
 
 uint16_t BleUuid::shorted() const {
-    return uuid_.uuid16;
+    return ((uint16_t)uuid128_[UUID16_LO] | ((uint16_t)uuid128_[UUID16_HI] << 8));
 }
 
-void BleUuid::rawBytes(uint8_t uuid128[BLE_SIG_UUID_128BIT_LEN]) const {
-    memcpy(uuid128, uuid_.uuid128, BLE_SIG_UUID_128BIT_LEN);
+size_t BleUuid::rawBytes(uint8_t uuid128[BLE_SIG_UUID_128BIT_LEN]) const {
+    memcpy(uuid128, uuid128_, BLE_SIG_UUID_128BIT_LEN);
+    return BLE_SIG_UUID_128BIT_LEN;
 }
 
 const uint8_t* BleUuid::rawBytes() const {
-    return uuid_.uuid128;
+    return uuid128_;
 }
 
 String BleUuid::toString(bool stripped) const {
@@ -351,7 +364,7 @@ size_t BleUuid::toString(char* buf, size_t len, bool stripped) const {
     }
     if (type() == BleUuidType::SHORT) {
         char cStr[BLE_SIG_UUID_16BIT_LEN * 2] = {};
-        uint16_t bigEndian = uuid_.uuid16 << 8 | uuid_.uuid16 >> 8;
+        uint16_t bigEndian = (uint16_t)uuid128_[UUID16_LO] << 8 | uuid128_[UUID16_HI];
         bytes2hexbuf((uint8_t*)&bigEndian, 2, cStr);
         len = std::min(len - 1, sizeof(cStr));
         memcpy(buf, cStr, len);
@@ -386,22 +399,17 @@ size_t BleUuid::toString(char* buf, size_t len, bool stripped) const {
 }
 
 BleUuid& BleUuid::operator=(const BleUuid& uuid) {
-    uuid_ = uuid.uuid_;
+    type_ = uuid.type_;
+    memcpy(uuid128_, uuid.uuid128_, BLE_SIG_UUID_128BIT_LEN);
     return *this;
 }
 
 BleUuid& BleUuid::operator=(const uint8_t* uuid128) {
-    if (uuid128) {
-        memcpy(uuid_.uuid128, uuid128, BLE_SIG_UUID_128BIT_LEN);
-        uuid_.type = BLE_UUID_TYPE_128BIT;
-    }
-    return *this;
+    return *this = BleUuid(uuid128);
 }
 
 BleUuid& BleUuid::operator=(uint16_t uuid16) {
-    uuid_.uuid16 = uuid16;
-    uuid_.type = BLE_UUID_TYPE_16BIT;
-    return *this;
+    return *this = BleUuid(uuid16);
 }
 
 BleUuid& BleUuid::operator=(const String& uuid) {
@@ -415,16 +423,11 @@ BleUuid& BleUuid::operator=(const char* uuid) {
 }
 
 BleUuid& BleUuid::operator=(const hal_ble_uuid_t& uuid) {
-    uuid_ = uuid;
-    return *this;
+    return *this = BleUuid(uuid);
 }
 
 bool BleUuid::operator==(const BleUuid& uuid) const {
-    if (type() == BleUuidType::SHORT) {
-        return (uuid_.uuid16 == uuid.uuid_.uuid16);
-    } else {
-        return !memcmp(uuid_.uuid128, uuid.uuid_.uuid128, BLE_SIG_UUID_128BIT_LEN);
-    }
+    return ((type_ == uuid.type_) && !memcmp(uuid128_, uuid.uuid128_, BLE_SIG_UUID_128BIT_LEN));
 }
 
 bool BleUuid::operator==(const char* uuid) const {
@@ -438,55 +441,59 @@ bool BleUuid::operator==(const String& uuid) const {
 }
 
 bool BleUuid::operator==(uint16_t uuid) const {
-    return (type() == BleUuidType::SHORT && uuid_.uuid16 == uuid);
+    BleUuid temp(uuid);
+    return *this == temp;
 }
 
 bool BleUuid::operator==(const uint8_t* uuid128) const {
-    return (type() == BleUuidType::LONG && !memcmp(uuid128, uuid_.uuid128, BLE_SIG_UUID_128BIT_LEN));
+    BleUuid temp(uuid128);
+    return *this == temp;
 }
 
 void BleUuid::construct(const char* uuid) {
+    type_ = BleUuidType::LONG;
+    memcpy(uuid128_, BASE_UUID, BLE_SIG_UUID_128BIT_LEN);
     if (uuid == nullptr) {
-        memset(uuid_.uuid128, 0x00, BLE_SIG_UUID_128BIT_LEN);
-        uuid_.type = BLE_UUID_TYPE_128BIT;
         return;
     }
     if (strnlen(uuid, BLE_SIG_UUID_128BIT_LEN * 2 + 4) == (BLE_SIG_UUID_16BIT_LEN * 2)) {
         char buf[2] = {};
         if (hexToBytes(uuid, buf, BLE_SIG_UUID_16BIT_LEN) == BLE_SIG_UUID_16BIT_LEN) {
-            uuid_.uuid16 = ((uint16_t)buf[0] << 8) | (uint16_t)buf[1];
-        } else {
-            uuid_.uuid16 = 0x0000;
+            uuid128_[UUID16_LO] = buf[1];
+            uuid128_[UUID16_HI] = buf[0];
         }
-        uuid_.type = BLE_UUID_TYPE_16BIT;
+        type_ = BleUuidType::SHORT;
         return;
     }
     size_t len = BLE_SIG_UUID_128BIT_LEN;
     for (size_t i = 0; i < strnlen(uuid, BLE_SIG_UUID_128BIT_LEN * 2 + 4) && len > 0; i++) {
         int8_t hi = hexToNibble(uuid[i]);
         if (hi >= 0) {
-            uuid_.uuid128[len - 1] = hi << 4;
+            uuid128_[len - 1] = hi << 4;
             if (++i < strnlen(uuid, BLE_SIG_UUID_128BIT_LEN * 2 + 4)) {
                 int8_t lo = hexToNibble(uuid[i]);
                 if (lo >= 0) {
-                    uuid_.uuid128[len - 1] |= lo;
+                    uuid128_[len - 1] |= lo;
                 }
             }
             len--;
         }
     }
     while (len > 0) {
-        uuid_.uuid128[len - 1] = 0x00;
+        uuid128_[len - 1] = 0x00;
         len--;
     }
-    uuid_.type = BLE_UUID_TYPE_128BIT;
 }
 
 void BleUuid::toBigEndian(uint8_t buf[BLE_SIG_UUID_128BIT_LEN]) const {
     for (uint8_t i = 0, j = BLE_SIG_UUID_128BIT_LEN - 1; i < BLE_SIG_UUID_128BIT_LEN; i++, j--) {
-        buf[i] = uuid_.uuid128[j];
+        buf[i] = uuid128_[j];
     }
 }
+
+constexpr uint8_t BleUuid::BASE_UUID[BLE_SIG_UUID_128BIT_LEN];
+constexpr uint8_t BleUuid::UUID16_LO;
+constexpr uint8_t BleUuid::UUID16_HI;
 
 
 /*******************************************************
@@ -749,7 +756,7 @@ public:
               context_(nullptr) {
     }
 
-    BleCharacteristicImpl(const char* desc, BleCharacteristicProperty properties, BleOnDataReceivedCallback callback, void* context)
+    BleCharacteristicImpl(const char* desc, EnumFlags<BleCharacteristicProperty> properties, BleOnDataReceivedCallback callback, void* context)
             : BleCharacteristicImpl() {
         properties_ = properties;
         description_ = desc;
@@ -757,7 +764,7 @@ public:
         context_ = context;
     }
 
-    BleCharacteristicImpl(const char* desc, BleCharacteristicProperty properties, BleUuid& charUuid, BleUuid& svcUuid, BleOnDataReceivedCallback callback, void* context)
+    BleCharacteristicImpl(const char* desc, EnumFlags<BleCharacteristicProperty> properties, BleUuid& charUuid, BleUuid& svcUuid, BleOnDataReceivedCallback callback, void* context)
             : BleCharacteristicImpl(desc, properties, callback, context) {
         charUuid_ = charUuid;
         svcUuid_ = svcUuid;
@@ -773,7 +780,7 @@ public:
         return connHandle_;
     }
 
-    BleCharacteristicProperty& properties() {
+    EnumFlags<BleCharacteristicProperty>& properties() {
         return properties_;
     }
 
@@ -831,7 +838,7 @@ public:
 private:
     bool isLocal_;
     BleConnectionHandle connHandle_; // For peer characteristic
-    BleCharacteristicProperty properties_;
+    EnumFlags<BleCharacteristicProperty> properties_;
     BleCharacteristicHandles attrHandles_;
     BleUuid charUuid_;
     BleUuid svcUuid_;
@@ -1081,7 +1088,7 @@ BleCharacteristic::BleCharacteristic(const BleCharacteristic& characteristic)
     DEBUG("BleCharacteristic(copy), 0x%08X => 0x%08X -> 0x%08X, count: %d", &characteristic, this, impl(), impl_.use_count());
 }
 
-BleCharacteristic::BleCharacteristic(const char* desc, BleCharacteristicProperty properties, BleOnDataReceivedCallback callback, void* context)
+BleCharacteristic::BleCharacteristic(const char* desc, EnumFlags<BleCharacteristicProperty> properties, BleOnDataReceivedCallback callback, void* context)
         : impl_(std::make_shared<BleCharacteristicImpl>(desc, properties, callback, context)) {
     if (!impl()) {
         SPARK_ASSERT(false);
@@ -1089,7 +1096,7 @@ BleCharacteristic::BleCharacteristic(const char* desc, BleCharacteristicProperty
     DEBUG("BleCharacteristic(...), 0x%08X -> 0x%08X, count: %d", this, impl(), impl_.use_count());
 }
 
-void BleCharacteristic::construct(const char* desc, BleCharacteristicProperty properties, BleUuid& charUuid, BleUuid& svcUuid, BleOnDataReceivedCallback callback, void* context) {
+void BleCharacteristic::construct(const char* desc, EnumFlags<BleCharacteristicProperty> properties, BleUuid& charUuid, BleUuid& svcUuid, BleOnDataReceivedCallback callback, void* context) {
     impl_ = std::make_shared<BleCharacteristicImpl>(desc, properties, charUuid, svcUuid, callback, context);
     if (!impl()) {
         SPARK_ASSERT(false);
@@ -1117,7 +1124,7 @@ BleUuid BleCharacteristic::UUID() const {
     return impl()->charUUID();
 }
 
-BleCharacteristicProperty BleCharacteristic::properties() const {
+EnumFlags<BleCharacteristicProperty> BleCharacteristic::properties() const {
     return impl()->properties();
 }
 
@@ -1143,22 +1150,22 @@ ssize_t BleCharacteristic::setValue(const uint8_t* buf, size_t len, BleTxRxType 
     if (impl()->local()) {
         int ret = SYSTEM_ERROR_NOT_SUPPORTED;
         // Updates the local characteristic value for peer to read.
-        if ((impl()->properties() & BleCharacteristicProperty::READ) == BleCharacteristicProperty::READ) {
+        if (impl()->properties().isSet(BleCharacteristicProperty::READ)) {
             ret = CHECK(hal_ble_gatt_server_set_characteristic_value(impl()->attrHandles().value_handle, buf, len, nullptr));
         }
-        if ((impl()->properties() & BleCharacteristicProperty::NOTIFY) == BleCharacteristicProperty::NOTIFY && type != BleTxRxType::ACK) {
+        if (impl()->properties().isSet(BleCharacteristicProperty::NOTIFY) && type != BleTxRxType::ACK) {
             return hal_ble_gatt_server_notify_characteristic_value(impl()->attrHandles().value_handle, buf, len, nullptr);
         }
-        if ((impl()->properties() & BleCharacteristicProperty::INDICATE) == BleCharacteristicProperty::INDICATE && type != BleTxRxType::NACK) {
+        if (impl()->properties().isSet(BleCharacteristicProperty::INDICATE) && type != BleTxRxType::NACK) {
             return hal_ble_gatt_server_indicate_characteristic_value(impl()->attrHandles().value_handle, buf, len, nullptr);
         }
         return ret;
     }
     if (impl()->connHandle() != BLE_INVALID_CONN_HANDLE) {
-        if ((impl()->properties() & BleCharacteristicProperty::WRITE_WO_RSP) == BleCharacteristicProperty::WRITE_WO_RSP && type != BleTxRxType::ACK) {
+        if (impl()->properties().isSet(BleCharacteristicProperty::WRITE_WO_RSP) && type != BleTxRxType::ACK) {
             return hal_ble_gatt_client_write_without_response(impl()->connHandle(), impl()->attrHandles().value_handle, buf, len, nullptr);
         }
-        if ((impl()->properties() & BleCharacteristicProperty::WRITE) == BleCharacteristicProperty::WRITE && type != BleTxRxType::NACK) {
+        if (impl()->properties().isSet(BleCharacteristicProperty::WRITE) && type != BleTxRxType::NACK) {
             return hal_ble_gatt_client_write_with_response(impl()->connHandle(), impl()->attrHandles().value_handle, buf, len, nullptr);
         }
         return SYSTEM_ERROR_NOT_SUPPORTED;
@@ -1217,10 +1224,10 @@ int BleCharacteristic::subscribe(bool enable) const {
     config.value_handle = impl()->attrHandles().value_handle;
     config.cccd_value = BLE_SIG_CCCD_VAL_DISABLED;
     if (enable) {
-        if ((impl()->properties() & BleCharacteristicProperty::INDICATE) == BleCharacteristicProperty::INDICATE) {
+        if (impl()->properties().isSet(BleCharacteristicProperty::INDICATE)) {
             config.cccd_value = BLE_SIG_CCCD_VAL_INDICATION;
         }
-        if ((impl()->properties() & BleCharacteristicProperty::NOTIFY) == BleCharacteristicProperty::NOTIFY) {
+        if (impl()->properties().isSet(BleCharacteristicProperty::NOTIFY)) {
             config.cccd_value = (ble_sig_cccd_value_t)(config.cccd_value | BLE_SIG_CCCD_VAL_NOTIFICATION);
         }
     }
@@ -2042,7 +2049,7 @@ BleCharacteristic BleLocalDevice::addCharacteristic(const BleCharacteristic& cha
     charInit.version = BLE_API_VERSION;
     charInit.size = sizeof(hal_ble_char_init_t);
     charInit.uuid = charImpl->charUUID().halUUID();
-    charInit.properties = static_cast<uint8_t>(charImpl->properties());
+    charInit.properties = charImpl->properties().value();
     charInit.service_handle = service->impl()->startHandle();
     charInit.description = charImpl->description().c_str();
     charInit.callback = charImpl->onBleCharEvents;
@@ -2058,14 +2065,14 @@ BleCharacteristic BleLocalDevice::addCharacteristic(const BleCharacteristic& cha
     return characteristic;
 }
 
-BleCharacteristic BleLocalDevice::addCharacteristic(const char* desc, BleCharacteristicProperty properties, BleOnDataReceivedCallback callback, void* context) {
+BleCharacteristic BleLocalDevice::addCharacteristic(const char* desc, EnumFlags<BleCharacteristicProperty> properties, BleOnDataReceivedCallback callback, void* context) {
     WiringBleLock lk;
     BleCharacteristic characteristic(desc, properties, callback, context);
     addCharacteristic(characteristic);
     return characteristic;
 }
 
-BleCharacteristic BleLocalDevice::addCharacteristic(const String& desc, BleCharacteristicProperty properties, BleOnDataReceivedCallback callback, void* context) {
+BleCharacteristic BleLocalDevice::addCharacteristic(const String& desc, EnumFlags<BleCharacteristicProperty> properties, BleOnDataReceivedCallback callback, void* context) {
     WiringBleLock lk;
     return addCharacteristic(desc.c_str(), properties, callback, context);
 }

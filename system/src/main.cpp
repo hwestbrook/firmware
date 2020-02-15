@@ -79,8 +79,12 @@
 #include "system_listening_mode.h"
 #endif /* HAL_PLATFORM_IFAPI */
 
-#if HAL_PLATFORM_NCP
-#include "network/ncp.h"
+#if HAL_PLATFORM_NCP && HAL_PLATFORM_WIFI
+#include "network/ncp/wifi/ncp.h"
+#endif
+
+#if HAL_PLATFORM_NCP && HAL_PLATFORM_CELLULAR
+#include "network/ncp/cellular/ncp.h"
 #endif
 
 #if HAL_PLATFORM_MESH
@@ -371,15 +375,12 @@ extern "C" void HAL_SysTick_Handler(void)
     static uint16_t cloudCheckTicks = CLOUD_CHECK_INTERVAL;
 
     if (--cloudCheckTicks == 0) {
-#ifndef SPARK_NO_CLOUD
         system_cloud_active();
-#endif // SPARK_NO_CLOUD
         cloudCheckTicks = CLOUD_CHECK_INTERVAL;
     }
 
     if(SPARK_FLASH_UPDATE)
     {
-#ifndef SPARK_NO_CLOUD
         if (TimingFlashUpdateTimeout >= TIMING_FLASH_UPDATE_TIMEOUT)
         {
             //Reset is the only way now to recover from stuck OTA update
@@ -389,7 +390,6 @@ extern "C" void HAL_SysTick_Handler(void)
         {
             TimingFlashUpdateTimeout++;
         }
-#endif
     }
     else if(network_listening(0, 0, 0) && HAL_Core_Mode_Button_Pressed(10000) && !button_cleared_credentials)
     {

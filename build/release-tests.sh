@@ -6,8 +6,8 @@ function display_help ()
 usage: release-tests.sh [--dryrun] [--help]
                         [--filename=<test_parameter_file.json>]
                         --output-directory=<binary_output_directory>
-                        --platform=<argon|asom|boron|bsom...
-                        |core|electron|p1|photon|xenon|xsom>
+                        --platform=<argon|boron|bsom...
+                        |b5som|electron|p1|photon|xenon>
                         --version=<semver_version_string>
 
 Generate the testing binaries belonging to a given platform.
@@ -107,7 +107,7 @@ function valid_platform ()
     platform=$1
 
     # Validate platform (result of expression returned to caller)
-    [ "$platform" = "argon" ] || [ "$platform" = "asom" ] || [ "$platform" = "boron" ] || [ "$platform" = "bsom" ] || [ "$platform" = "core" ] || [ "$platform" = "electron" ] || [ "$platform" = "p1" ] || [ "$platform" = "photon" ] || [ "$platform" = "xenon" ] || [ "$platform" = "xsom" ]
+    [ "$platform" = "argon" ] || [ "$platform" = "boron" ] || [ "$platform" = "bsom" ] || [ "$platform" = "b5som" ] || [ "$platform" = "electron" ] || [ "$platform" = "p1" ] || [ "$platform" = "photon" ] || [ "$platform" = "xenon" ]
 }
 
 # Handle invalid arguments
@@ -130,9 +130,6 @@ fi
 
 # Infer platform id
 case "$PLATFORM" in
-    "core")
-        PLATFORM_ID="0"
-        ;;
     "photon")
         PLATFORM_ID="6"
         ;;
@@ -151,14 +148,11 @@ case "$PLATFORM" in
     "xenon")
         PLATFORM_ID="14"
         ;;
-    "asom")
-        PLATFORM_ID="22"
-        ;;
     "bsom")
         PLATFORM_ID="23"
         ;;
-    "xsom")
-        PLATFORM_ID="24"
+    "b5som")
+        PLATFORM_ID="25"
         ;;
     *)
         echo "ERROR: No rules to release platform: \"$PLATFORM\"!"
@@ -199,7 +193,7 @@ for test_object in $(jq '.platforms[] | select(.platform == "'${PLATFORM}'") | .
         local member=$2
         echo $object_string | base64 --decode | jq -r $member
     }
-    
+
     METADATA=false
 
     # Create tests directory
@@ -226,15 +220,10 @@ for test_object in $(jq '.platforms[] | select(.platform == "'${PLATFORM}'") | .
         MAKE_COMMAND+=" DEBUG_BUILD=n"
     fi
 
-    # Support Core
-    if [ "$PLATFORM" == "core" ]; then
-        MAKE_COMMAND+=" MODULAR=n"
-    else
-        MAKE_COMMAND+=" MODULAR=y"
-    fi
+    MAKE_COMMAND+=" MODULAR=y"
 
     MAKE_COMMAND+=" USE_SWD_JTAG=n USE_SWD=n"
-    
+
     # Append test commands and metadata
     MAKE_COMMAND+=" TEST=$(json $test_object .path)/$(json $test_object .name)"
     if [ $(json $test_object .use_threading) = true ]; then
@@ -257,12 +246,7 @@ for test_object in $(jq '.platforms[] | select(.platform == "'${PLATFORM}'") | .
         done
     fi
 
-    # Support Core
-    if [ "$PLATFORM" == "core" ]; then
-        BUILD_DIRECTORY=$ABSOLUTE_TARGET_DIRECTORY/main/platform-$PLATFORM_ID-lto
-    else
-        BUILD_DIRECTORY=$ABSOLUTE_TARGET_DIRECTORY/user-part/platform-$PLATFORM_ID-m
-    fi
+    BUILD_DIRECTORY=$ABSOLUTE_TARGET_DIRECTORY/user-part/platform-$PLATFORM_ID-m
 
     # Clear build directory
     echo $MAKE_COMMAND
