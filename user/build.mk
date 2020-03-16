@@ -33,6 +33,23 @@ endif
 # the root of the application
 APPROOT := $(SOURCE_PATH)$(USRSRC)
 
+ifeq ($(DEBUG_LOG), y)
+	CFLAGS += -DDEBUG_LOG
+endif
+
+ifeq ($(ALTRAC_DEVICE), 340)
+	CFLAGS += -DENDPOINT_340
+endif
+ifeq ($(ALTRAC_DEVICE), 310)
+	CFLAGS += -DENDPOINT_310
+endif
+ifeq ($(ALTRAC_DEVICE), WD_100)
+	CFLAGS += -DENDPOINT_WD_100
+endif
+ifeq ($(ALTRAC_DEVICE), SD_200)
+	CFLAGS += -DENDPOINT_SD_200
+endif
+
 ifneq ($(wildcard $(APPROOT)/project.properties),)
 	ifneq ($(wildcard $(APPROOT)/src),)
 	   APPLAYOUT=extended
