@@ -20,6 +20,7 @@
 #include "application.h"
 #include "unit-test/unit-test.h"
 #include "socket_hal.h"
+#include "random.h"
 
 #if Wiring_Cellular == 1
 bool skip_r410 = false;
@@ -156,7 +157,64 @@ test(CELLULAR_07_rssi_is_valid) {
     assertMoreOrEqual(s.rssi, -150);
 }
 
-#define LOREM "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Quisque ut elit nec mi bibendum mollis. Nam nec nisl mi. Donec dignissim iaculis purus, ut condimentum arcu semper quis. Phasellus efficitur ut arcu ac dignissim. In interdum sem id dictum luctus. Ut nec mattis sem. Nullam in aliquet lacus. Donec egestas nisi volutpat lobortis sodales. Aenean elementum magna ipsum, vitae pretium tellus lacinia eu. Phasellus commodo nisi at quam tincidunt, tempor gravida mauris facilisis. Duis tristique ligula ac pulvinar consectetur. Cras aliquam, leo ut eleifend molestie, arcu odio semper odio, quis sollicitudin metus libero et lorem. Donec venenatis congue commodo. Vivamus mattis elit metus, sed fringilla neque viverra eu. Phasellus leo urna, elementum vel pharetra sit amet, auctor non sapien. Phasellus at justo ac augue rutrum vulputate. In hac habitasse platea dictumst. Pellentesque nibh eros, placerat id laoreet sed, dapibus efficitur augue. Praesent pretium diam ac sem varius fermentum. Nunc suscipit dui risus sed"
+// Collects cellular signal strength and quality and validates Accesstechnology (RAT)
+test(CELLULAR_08_sigstr_is_valid) {
+    connect_to_cloud(6*60*1000);
+    assertTrue(Particle.connected());
+    CellularSignal s;
+    bool values_in_range = false;
+    const int num_retries = 10;
+    // Checks 10 times with 500ms gap to get valid signal strength
+    for (int x = 0; x < num_retries; x++) {
+        s = Cellular.RSSI();
+        // Verify that strength and quality values are in range for the given AccessTechnology
+        switch (s.getAccessTechnology()) {
+            case NET_ACCESS_TECHNOLOGY_GSM:     // GSM strength [-111, -48] and quality [-3.70, -0.60]
+                if ((s.getStrengthValue() <= -48.0f && s.getStrengthValue() >= -111.0f)
+                    && (s.getQualityValue() <= -0.6f && s.getQualityValue() >= -3.7f)) {
+                        values_in_range = true;
+                        x = num_retries;
+                        break;
+                }
+                Serial.printlnf("StrV: %.2f, QualV: %.2f, RAT: %d", s.getStrengthValue(), s.getQualityValue(), s.getAccessTechnology());
+                break;
+            case NET_ACCESS_TECHNOLOGY_EDGE:     // EDGE strength [-111, -48] and quality [-3.70, -0.60]
+                if ((s.getStrengthValue() <= -48.0f && s.getStrengthValue() >= -111.0f)
+                    && (s.getQualityValue() <= -0.6f && s.getQualityValue() >= -3.7f)) {
+                        values_in_range = true;
+                        x = num_retries;
+                        break;
+                }
+                Serial.printlnf("StrV: %.2f, QualV: %.2f, RAT: %d", s.getStrengthValue(), s.getQualityValue(), s.getAccessTechnology());
+                break;
+            case NET_ACCESS_TECHNOLOGY_UTRAN:     // UTRAN strength [-121, -25] and quality [-24.5, 0]
+                if ((s.getStrengthValue() <= -25.0f && s.getStrengthValue() >= -121.0f)
+                    && (s.getQualityValue() <= -0.0f && s.getQualityValue() >= -25.4f)) {
+                        values_in_range = true;
+                        x = num_retries;
+                        break;
+                }
+                Serial.printlnf("StrV: %.2f, QualV: %.2f, RAT: %d", s.getStrengthValue(), s.getQualityValue(), s.getAccessTechnology());
+                break;
+            case NET_ACCESS_TECHNOLOGY_LTE:
+            case NET_ACCESS_TECHNOLOGY_LTE_CAT_M1:  // LTE CAT-M1 strength [-141, -44] and quality [-20, -3]
+            case NET_ACCESS_TECHNOLOGY_LTE_CAT_NB1:
+                if ((s.getStrengthValue() <= -44.0f && s.getStrengthValue() >= -141.0f)
+                    && (s.getQualityValue() <= -3.0f && s.getQualityValue() >= -20.0f)) {
+                        values_in_range = true;
+                        x = num_retries;
+                        break;
+                }
+                Serial.printlnf("StrV: %.2f, QualV: %.2f, RAT: %d", s.getStrengthValue(), s.getQualityValue(), s.getAccessTechnology());
+                break;
+            default:
+                break;
+        }
+        delay(500);
+    }
+    assertFalse((s.getAccessTechnology() == NET_ACCESS_TECHNOLOGY_UNKNOWN) || (s.getAccessTechnology() == NET_ACCESS_TECHNOLOGY_NONE));
+    assertTrue(values_in_range);
+}
 
 test(MDM_01_socket_writes_with_length_more_than_1023_work_correctly) {
 
@@ -169,7 +227,16 @@ test(MDM_01_socket_writes_with_length_more_than_1023_work_correctly) {
 #endif // HAL_PLATFORM_NCP
 
     // https://github.com/spark/firmware/issues/1104
-    const char request[] =
+
+    const int dataSize = 1024;
+    const int bufferSize = 2048;
+    auto randData = std::make_unique<char[]>(dataSize);
+    assertTrue((bool)randData);
+
+    Random rand;
+    rand.genBase32(randData.get(), dataSize);
+
+    static const char requestFormat[] =
         "POST /post HTTP/1.1\r\n"
         "Host: httpbin.org\r\n"
         "Connection: close\r\n"
@@ -179,9 +246,16 @@ test(MDM_01_socket_writes_with_length_more_than_1023_work_correctly) {
         "---------------aaaaaaaa\r\n"
         "Content-Disposition: form-data; name=\"field\"\r\n"
         "\r\n"
-        LOREM "\r\n"
+        "%s\r\n"
         "---------------aaaaaaaa--\r\n";
-    const int requestSize = sizeof(request) - 1;
+
+    auto request = std::make_unique<char[]>(bufferSize);
+    assertTrue((bool)request);
+    memset(request.get(), 0, bufferSize);
+
+    snprintf(request.get(), bufferSize, requestFormat, randData.get());
+
+    const int requestSize = strlen(request.get());
 
     Cellular.connect();
     waitFor(Cellular.ready, 120000);
@@ -190,16 +264,17 @@ test(MDM_01_socket_writes_with_length_more_than_1023_work_correctly) {
     int res = c.connect("httpbin.org", 80);
     (void)res;
 
-    int sz = c.write((const uint8_t*)request, requestSize);
+    int sz = c.write((const uint8_t*)request.get(), requestSize);
     assertEqual(sz, requestSize);
 
-    char* responseBuf = new char[2048];
-    memset(responseBuf, 0, 2048);
+    auto responseBuf = std::make_unique<char[]>(bufferSize);
+    assertTrue((bool)responseBuf);
+    memset(responseBuf.get(), 0, bufferSize);
     int responseSize = 0;
     uint32_t mil = millis();
     while(1) {
-        while (c.available()) {
-            responseBuf[responseSize++] = c.read();
+        while (c.available() && responseSize < bufferSize) {
+            responseBuf.get()[responseSize++] = c.read();
         }
         if (!c.connected())
             break;
@@ -213,10 +288,8 @@ test(MDM_01_socket_writes_with_length_more_than_1023_work_correctly) {
 
     bool contains = false;
     if (responseSize > 0 && !c.connected()) {
-        contains = strstr(responseBuf, LOREM) != nullptr;
+        contains = strstr(responseBuf.get(), randData.get()) != nullptr;
     }
-
-    delete responseBuf;
 
     assertTrue(contains);
 }
@@ -230,7 +303,8 @@ static int atCallback(int type, const char* buf, int len, int* lines) {
 test(MDM_02_at_commands_with_long_response_are_correctly_parsed_and_flow_controlled) {
     if (cellular_modem_type() == DEV_QUECTEL_BG96 || \
         cellular_modem_type() == DEV_QUECTEL_EG91_E || \
-        cellular_modem_type() == DEV_QUECTEL_EG91_NA) {
+        cellular_modem_type() == DEV_QUECTEL_EG91_NA || \
+        cellular_modem_type() == DEV_QUECTEL_EG91_EX) {
         Serial.println("TODO: find a command with long response on Quectel NCP");
         skip();
         return;

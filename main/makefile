@@ -24,6 +24,9 @@ endif
 ifeq ($(PLATFORM_ID),14)
 MODULAR?=y
 endif
+ifeq ($(PLATFORM_ID),22)
+MODULAR?=y
+endif
 ifeq ($(PLATFORM_ID),23)
 MODULAR?=y
 endif
@@ -64,7 +67,7 @@ include $(COMMON_BUILD)/recurse.mk
 include $(COMMON_BUILD)/verbose.mk
 
 
-.PNONY: st-flash program-dfu clean all
+.PHONY: st-flash program-dfu clean all
 
 else
 

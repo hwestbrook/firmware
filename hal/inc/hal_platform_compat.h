@@ -28,6 +28,7 @@
     #define HAL_PLATFORM_CELLULAR 1
     #define PANIC_BUT_KEEP_CALM 1
     #define HAL_PLATFORM_SETUP_BUTTON_UX 1
+    #define HAL_PLATFORM_MAY_LEAK_SOCKETS (1)
 #endif
 
 #if PLATFORM_ID == PLATFORM_ELECTRON_PRODUCTION || PLATFORM_ID == PLATFORM_GCC
@@ -90,5 +91,21 @@
 #if HAL_PLATFORM_WIFI
 #define HAL_PLATFORM_NETWORK_MULTICAST (1)
 #endif // HAL_PLATFORM_WIFI
+
+#if PLATFORM_ID == PLATFORM_GCC
+#define PRODUCT_SERIES                      "gcc"
+#endif
+
+#if PLATFORM_ID == PLATFORM_NEWHAL
+#define PRODUCT_SERIES                      "newhal"
+#endif
+
+#if PLATFORM_ID == PLATFORM_PHOTON_PRODUCTION || PLATFORM_ID == PLATFORM_P1
+#define PRODUCT_SERIES                      "photon"
+#endif
+
+#if PLATFORM_ID == PLATFORM_ELECTRON_PRODUCTION
+#define PRODUCT_SERIES                      "electron"
+#endif
 
 #endif /* HAL_PLATFORM_COMPAT_H */

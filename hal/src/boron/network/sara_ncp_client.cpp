@@ -38,6 +38,7 @@
 #include "spark_wiring_vector.h"
 
 #include <algorithm>
+#include <limits>
 
 #undef LOG_COMPILE_TIME_LEVEL
 #define LOG_COMPILE_TIME_LEVEL LOG_LEVEL_ALL
@@ -99,6 +100,9 @@ const auto UBLOX_NCP_SIM_SELECT_PIN = 23;
 
 const unsigned REGISTRATION_CHECK_INTERVAL = 15 * 1000;
 const unsigned REGISTRATION_TIMEOUT = 5 * 60 * 1000;
+
+using LacType = decltype(CellularGlobalIdentity::location_area_code);
+using CidType = decltype(CellularGlobalIdentity::cell_id);
 
 } // anonymous
 
@@ -162,19 +166,23 @@ int SaraNcpClient::initParser(Stream* stream) {
             .commandTerminator(AtCommandTerminator::CRLF);
     parser_.destroy();
     CHECK(parser_.init(std::move(parserConf)));
+
+    // NOTE: These URC handlers need to take care of both the URCs and direct responses to the commands.
+    // See CH28408
+
     // +CREG: <stat>[,<lac>,<ci>[,<AcTStatus>]]
     CHECK(parser_.addUrcHandler("+CREG", [](AtResponseReader* reader, const char* prefix, void* data) -> int {
         const auto self = (SaraNcpClient*)data;
-        int val[4] = {-1,-1,-1,-1};
-        char atResponse[64] = {0};
+        unsigned int val[4] = {};
+        char atResponse[64] = {};
         // Take a copy of AT response for multi-pass scanning
         CHECK_PARSER_URC(reader->readLine(atResponse, sizeof(atResponse)));
         // Parse response ignoring mode (replicate URC response)
-        int r = ::sscanf(atResponse, "+CREG: %*d,%d,\"%x\",\"%x\",%d", &val[0], &val[1], &val[2], &val[3]);
+        int r = ::sscanf(atResponse, "+CREG: %*u,%u,\"%x\",\"%x\",%u", &val[0], &val[1], &val[2], &val[3]);
         // Reparse URC as direct response
         if (0 >= r) {
             r = CHECK_PARSER_URC(
-                ::sscanf(atResponse, "+CREG: %d,\"%x\",\"%x\",%d", &val[0], &val[1], &val[2], &val[3]));
+                ::sscanf(atResponse, "+CREG: %u,\"%x\",\"%x\",%u", &val[0], &val[1], &val[2], &val[3]));
         }
         CHECK_TRUE(r >= 1, SYSTEM_ERROR_AT_RESPONSE_UNEXPECTED);
         // Home network or roaming
@@ -185,24 +193,30 @@ int SaraNcpClient::initParser(Stream* stream) {
         }
         self->checkRegistrationState();
         // Cellular Global Identity (partial)
-        self->cgi_.location_area_code = static_cast<uint16_t>(val[1]);
-        self->cgi_.cell_id = val[2];
+        // Only update if unset
+        if (r >= 3) {
+            if (self->cgi_.location_area_code == std::numeric_limits<LacType>::max() &&
+                    self->cgi_.cell_id == std::numeric_limits<CidType>::max()) {
+                self->cgi_.location_area_code = static_cast<LacType>(val[1]);
+                self->cgi_.cell_id = static_cast<CidType>(val[2]);
+            }
+        }
         return 0;
     }, this));
     // n={0,1} +CGREG: <stat>
     // n=2     +CGREG: <stat>[,<lac>,<ci>[,<AcT>,<rac>]]
     CHECK(parser_.addUrcHandler("+CGREG", [](AtResponseReader* reader, const char* prefix, void* data) -> int {
         const auto self = (SaraNcpClient*)data;
-        int val[4] = {-1,-1,-1,-1};
-        char atResponse[64] = {0};
+        unsigned int val[4] = {};
+        char atResponse[64] = {};
         // Take a copy of AT response for multi-pass scanning
         CHECK_PARSER_URC(reader->readLine(atResponse, sizeof(atResponse)));
         // Parse response ignoring mode (replicate URC response)
-        int r = ::sscanf(atResponse, "+CGREG: %*d,%d,\"%x\",\"%x\",%d,\"%*x\"", &val[0], &val[1], &val[2], &val[3]);
+        int r = ::sscanf(atResponse, "+CGREG: %*u,%u,\"%x\",\"%x\",%u,\"%*x\"", &val[0], &val[1], &val[2], &val[3]);
         // Reparse URC as direct response
         if (0 >= r) {
             r = CHECK_PARSER_URC(
-                ::sscanf(atResponse, "+CGREG: %d,\"%x\",\"%x\",%d,\"%*x\"", &val[0], &val[1], &val[2], &val[3]));
+                ::sscanf(atResponse, "+CGREG: %u,\"%x\",\"%x\",%u,\"%*x\"", &val[0], &val[1], &val[2], &val[3]));
         }
         CHECK_TRUE(r >= 1, SYSTEM_ERROR_AT_RESPONSE_UNEXPECTED);
         // Home network or roaming
@@ -213,23 +227,37 @@ int SaraNcpClient::initParser(Stream* stream) {
         }
         self->checkRegistrationState();
         // Cellular Global Identity (partial)
-        self->cgi_.location_area_code = val[1];
-        self->cgi_.cell_id = val[2];
+        if (r >= 3) {
+            auto rat = r >= 4 ? static_cast<CellularAccessTechnology>(val[3]) : self->act_;
+            switch (rat) {
+                case CellularAccessTechnology::GSM:
+                case CellularAccessTechnology::GSM_COMPACT:
+                case CellularAccessTechnology::UTRAN:
+                case CellularAccessTechnology::GSM_EDGE:
+                case CellularAccessTechnology::UTRAN_HSDPA:
+                case CellularAccessTechnology::UTRAN_HSUPA:
+                case CellularAccessTechnology::UTRAN_HSDPA_HSUPA: {
+                    self->cgi_.location_area_code = static_cast<LacType>(val[1]);
+                    self->cgi_.cell_id = static_cast<CidType>(val[2]);
+                    break;
+                }
+            }
+        }
         return 0;
     }, this));
     // +CEREG: <stat>[,[<tac>],[<ci>],[<AcT>][,<cause_type>,<reject_cause>[,[<Active_Time>],[<Periodic_TAU>]]]]
     CHECK(parser_.addUrcHandler("+CEREG", [](AtResponseReader* reader, const char* prefix, void* data) -> int {
         const auto self = (SaraNcpClient*)data;
-        int val[4] = {-1,-1,-1,-1};
-        char atResponse[64] = {0};
+        unsigned int val[4] = {};
+        char atResponse[64] = {};
         // Take a copy of AT response for multi-pass scanning
         CHECK_PARSER_URC(reader->readLine(atResponse, sizeof(atResponse)));
         // Parse response ignoring mode (replicate URC response)
-        int r = ::sscanf(atResponse, "+CEREG: %*d,%d,\"%x\",\"%x\",%d", &val[0], &val[1], &val[2], &val[3]);
+        int r = ::sscanf(atResponse, "+CEREG: %*u,%u,\"%x\",\"%x\",%u", &val[0], &val[1], &val[2], &val[3]);
         // Reparse URC as direct response
         if (0 >= r) {
             r = CHECK_PARSER_URC(
-                ::sscanf(atResponse, "+CEREG: %d,\"%x\",\"%x\",%d", &val[0], &val[1], &val[2], &val[3]));
+                ::sscanf(atResponse, "+CEREG: %u,\"%x\",\"%x\",%u", &val[0], &val[1], &val[2], &val[3]));
         }
         CHECK_TRUE(r >= 1, SYSTEM_ERROR_AT_RESPONSE_UNEXPECTED);
         // Home network or roaming
@@ -240,8 +268,18 @@ int SaraNcpClient::initParser(Stream* stream) {
         }
         self->checkRegistrationState();
         // Cellular Global Identity (partial)
-        self->cgi_.location_area_code = val[1];
-        self->cgi_.cell_id = val[2];
+        if (r >= 3) {
+            auto rat = r >= 4 ? static_cast<CellularAccessTechnology>(val[3]) : self->act_;
+            switch (rat) {
+                case CellularAccessTechnology::LTE:
+                case CellularAccessTechnology::EC_GSM_IOT:
+                case CellularAccessTechnology::E_UTRAN: {
+                    self->cgi_.location_area_code = static_cast<LacType>(val[1]);
+                    self->cgi_.cell_id = static_cast<CidType>(val[2]);
+                    break;
+                }
+            }
+        }
         return 0;
     }, this));
     return 0;
@@ -353,7 +391,6 @@ int SaraNcpClient::dataChannelWrite(int id, const uint8_t* data, size_t size) {
         // Make sure we are going into an error state if muxer for some reason fails
         // to write into the data channel.
         disable();
-        connectionState(NcpConnectionState::DISCONNECTED);
     }
 
     return err;
@@ -471,7 +508,25 @@ int SaraNcpClient::getCellularGlobalIdentity(CellularGlobalIdentity* cgi) {
     CHECK_TRUE(connState_ != NcpConnectionState::DISCONNECTED, SYSTEM_ERROR_INVALID_STATE);
     CHECK_TRUE(cgi, SYSTEM_ERROR_INVALID_ARGUMENT);
     CHECK(checkParser());
-    CHECK(queryAndParseAtCops(nullptr));
+
+    // FIXME: this is a workaround for CH28408
+    CellularSignalQuality qual;
+    CHECK(queryAndParseAtCops(&qual));
+    CHECK_TRUE(qual.accessTechnology() != CellularAccessTechnology::NONE, SYSTEM_ERROR_INVALID_STATE);
+    // Update current RAT
+    act_ = qual.accessTechnology();
+    // Invalidate LAC and Cell ID
+    cgi_.location_area_code = std::numeric_limits<LacType>::max();
+    cgi_.cell_id = std::numeric_limits<CidType>::max();
+    // Fill in LAC and Cell ID based on current RAT, prefer PSD and EPS
+    // fallback to CSD
+    if (conf_.ncpIdentifier() != PLATFORM_NCP_SARA_R410) {
+        CHECK_PARSER_OK(parser_.execCommand("AT+CGREG?"));
+        CHECK_PARSER_OK(parser_.execCommand("AT+CREG?"));
+    } else {
+        CHECK_PARSER_OK(parser_.execCommand("AT+CEREG?"));
+        CHECK_PARSER_OK(parser_.execCommand("AT+CREG?"));
+    }
 
     switch (cgi->version)
     {
@@ -498,52 +553,63 @@ int SaraNcpClient::getSignalQuality(CellularSignalQuality* qual) {
     CHECK(checkParser());
     CHECK(queryAndParseAtCops(qual));
 
+    // Min and max RSRQ index values multiplied by 100
+    // Min: -19.5 and max: -3
+    const int min_rsrq_mul_by_100 = -1950;
+    const int max_rsrq_mul_by_100 = -300;
+
     if (ncpId() == PLATFORM_NCP_SARA_R410) {
-        int rxlev, rxqual, rscp, ecn0, rsrq, rsrp;
-        auto resp = parser_.sendCommand("AT+CESQ");
-        int r = CHECK_PARSER(resp.scanf("+CESQ: %d,%d,%d,%d,%d,%d", &rxlev, &rxqual,
-                &rscp, &ecn0, &rsrq, &rsrp));
-        CHECK_TRUE(r == 6, SYSTEM_ERROR_AT_RESPONSE_UNEXPECTED);
-        r = CHECK_PARSER(resp.readResult());
+        int rsrp;
+        int rsrq_n;
+        unsigned long rsrq_f;
+
+        // Default to 255 in case RSRP/Q are not found
+        qual->strength(255);
+        qual->quality(255);
+
+        // Set UCGED to mode 5 for RSRP/RSRQ values on R410M
+        CHECK_PARSER_OK(parser_.execCommand("AT+UCGED=5"));
+        auto resp = parser_.sendCommand("AT+UCGED?");
+
+        int val;
+        unsigned long val2;
+        while (resp.hasNextLine()) {
+            char type = 0;
+            const int r = CHECK_PARSER(resp.scanf("+RSR%c: %*d,%*d,\"%d.%lu\"", &type, &val, &val2));
+            if (r >= 2) {
+                if (type == 'P') {
+                    rsrp = val;
+                    if (rsrp < -140 && rsrp >= -200) {
+                        qual->strength(0);
+                    } else if (rsrp >= -44 && rsrp <= 0) {
+                        qual->strength(97);
+                    } else if (rsrp >= -140 && rsrp < -44) {
+                        qual->strength(rsrp + 141);
+                    } else {
+                        // If RSRP is not in the expected range
+                        qual->strength(255);
+                    }
+                } else if (type == 'Q' && r == 3) {
+                    rsrq_n = val;
+                    rsrq_f = val2;
+                    int rsrq_mul_100 = rsrq_n * 100 - rsrq_f;
+                    if (rsrq_mul_100 < min_rsrq_mul_by_100 && rsrq_mul_100 >= -2000) {
+                        qual->quality(0);
+                    } else if (rsrq_mul_100 >= max_rsrq_mul_by_100 && rsrq_mul_100 <=0) {
+                        qual->quality(34);
+                    } else if (rsrq_mul_100 >= min_rsrq_mul_by_100 && rsrq_mul_100 < max_rsrq_mul_by_100) {
+                        qual->quality((rsrq_mul_100 + 2000)/50);
+                    } else {
+                        // If RSRQ is not in the expected range
+                        qual->quality(255);
+                    }
+                }
+            }
+        }
+
+        const int r = CHECK_PARSER(resp.readResult());
         CHECK_TRUE(r == AtResponse::OK, SYSTEM_ERROR_AT_NOT_OK);
 
-        switch (qual->strengthUnits()) {
-            case CellularStrengthUnits::RXLEV: {
-                qual->strength(rxlev);
-                break;
-            }
-            case CellularStrengthUnits::RSCP: {
-                qual->strength(rscp);
-                break;
-            }
-            case CellularStrengthUnits::RSRP: {
-                qual->strength(rsrp);
-                break;
-            }
-            default: {
-                // Do nothing
-                break;
-            }
-        }
-
-        switch (qual->qualityUnits()) {
-            case CellularQualityUnits::RXQUAL: {
-                qual->quality(rxqual);
-                break;
-            }
-            case CellularQualityUnits::ECN0: {
-                qual->quality(ecn0);
-                break;
-            }
-            case CellularQualityUnits::RSRQ: {
-                qual->quality(rsrq);
-                break;
-            }
-            default: {
-                // Do nothing
-                break;
-            }
-        }
     } else {
         int rxlev, rxqual;
         auto resp = parser_.sendCommand("AT+CSQ");
@@ -553,25 +619,6 @@ int SaraNcpClient::getSignalQuality(CellularSignalQuality* qual) {
         CHECK_TRUE(r == AtResponse::OK, SYSTEM_ERROR_AT_NOT_OK);
 
         // Fixup values
-        switch (qual->strengthUnits()) {
-            case CellularStrengthUnits::RXLEV: {
-                qual->strength((rxlev != 99) ? (2 * rxlev) : rxlev);
-                break;
-            }
-            case CellularStrengthUnits::RSCP: {
-                qual->strength((rxlev != 99) ? (3 + 2 * rxlev) : 255);
-                break;
-            }
-            case CellularStrengthUnits::RSRP: {
-                qual->strength((rxlev != 99) ? (rxlev * 97) / 31 : 255);
-                break;
-            }
-            default: {
-                // Do nothing
-                break;
-            }
-        }
-
         if (qual->accessTechnology() == CellularAccessTechnology::GSM_EDGE) {
             qual->qualityUnits(CellularQualityUnits::MEAN_BEP);
         }
@@ -588,6 +635,50 @@ int SaraNcpClient::getSignalQuality(CellularSignalQuality* qual) {
             }
             case CellularQualityUnits::RSRQ: {
                 qual->quality((rxqual != 99) ? (rxqual * 34) / 7 : 255);
+                break;
+            }
+            default: {
+                // Do nothing
+                break;
+            }
+        }
+
+        switch (qual->strengthUnits()) {
+            case CellularStrengthUnits::RXLEV: {
+                qual->strength((rxlev != 99) ? (2 * rxlev) : rxlev);
+                break;
+            }
+            case CellularStrengthUnits::RSCP: {
+                if (qual->quality() != 255) {
+                    // Convert to Ec/Io in dB * 100
+                    auto ecio100 = qual->quality() * 50 - 2450;
+                    // RSCP = RSSI + Ec/Io
+                    // Based on Table 4: Mapping between <signal_power> reported from UE and the RSSI when the P-CPICH= -2 dB (UBX-13002752 - R65)
+                    if (rxlev != 99) {
+                        auto rssi100 = -11250 + 500 * rxlev / 2;
+                        auto rscp = (rssi100 + ecio100) / 100;
+                        // Convert from dBm [-121, -25] to RSCP_LEV number, see 3GPP TS 25.133 9.1.1.3
+                        if (rscp < -120) {
+                            rscp = 0;
+                        } else if (rscp >= -25) {
+                            rscp = 96;
+                        } else if (rscp >= -120 && rscp < -25) {
+                            rscp = rscp + 121;
+                        } else {
+                            rscp = 255;
+                        }
+                        qual->strength(rscp);
+                    } else {
+                        qual->strength(255);
+                    }
+                } else {
+                    // Naively map to CESQ range (which is wrong)
+                    qual->strength((rxlev != 99) ? (3 + 2 * rxlev) : 255);
+                }
+                break;
+            }
+            case CellularStrengthUnits::RSRP: {
+                qual->strength((rxlev != 99) ? (rxlev * 97) / 31 : 255);
                 break;
             }
             default: {
@@ -1104,19 +1195,24 @@ int SaraNcpClient::muxChannelStateCb(uint8_t channel, decltype(muxer_)::ChannelS
     // This callback is executed from the multiplexer thread, not safe to use the lock here
     // because it might get called while blocked inside some muxer function
 
+    // Also please note that connectionState() should never be called with the CONNECTED state
+    // from this callback.
+
     // We are only interested in Closed state
     if (newState == decltype(muxer_)::ChannelState::Closed) {
         switch (channel) {
             case 0: {
                 // Muxer stopped
                 self->disable();
-                self->connState_ = NcpConnectionState::DISCONNECTED;
                 break;
             }
             case UBLOX_NCP_PPP_CHANNEL: {
                 // PPP channel closed
                 if (self->connState_ != NcpConnectionState::DISCONNECTED) {
-                    self->connState_ = NcpConnectionState::CONNECTING;
+                    // It should be safe to notify the PPP netif/client about a change of state
+                    // here exactly because the muxer channel is closed and there is no
+                    // chance for a deadlock.
+                    self->connectionState(NcpConnectionState::CONNECTING);
                 }
                 break;
             }

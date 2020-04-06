@@ -26,6 +26,8 @@
 
 #include "dynalib.h"
 
+#include "platforms.h"
+
 #ifdef DYNALIB_EXPORT
 #include "i2c_hal.h"
 #endif
@@ -41,7 +43,7 @@ DYNALIB_BEGIN(hal_i2c)
 
 // first edition of these functions that were released on the Photon/P1
 // They are not needed on other platforms.
-#if PLATFORM_ID==6 || PLATFORM_ID==8
+#if PLATFORM_ID==PLATFORM_PHOTON_PRODUCTION || PLATFORM_ID==PLATFORM_P1
 DYNALIB_FN(0, hal_i2c, HAL_I2C_Set_Speed_v1, void(uint32_t))
 DYNALIB_FN(1, hal_i2c, HAL_I2C_Enable_DMA_Mode_v1, void(bool))
 DYNALIB_FN(2, hal_i2c, HAL_I2C_Stretch_Clock_v1, void(bool))
@@ -69,7 +71,7 @@ DYNALIB_FN(BASE_IDX + 2, hal_i2c, HAL_I2C_Stretch_Clock, void(HAL_I2C_Interface,
 DYNALIB_FN(BASE_IDX + 3, hal_i2c, HAL_I2C_Begin, void(HAL_I2C_Interface, I2C_Mode, uint8_t, void*))
 DYNALIB_FN(BASE_IDX + 4, hal_i2c, HAL_I2C_End, void(HAL_I2C_Interface, void*))
 DYNALIB_FN(BASE_IDX + 5, hal_i2c, HAL_I2C_Request_Data, uint32_t(HAL_I2C_Interface, uint8_t, uint8_t, uint8_t, void*))
-DYNALIB_FN(BASE_IDX + 6, hal_i2c, HAL_I2C_Begin_Transmission, void(HAL_I2C_Interface, uint8_t, void*))
+DYNALIB_FN(BASE_IDX + 6, hal_i2c, HAL_I2C_Begin_Transmission, void(HAL_I2C_Interface, uint8_t, const HAL_I2C_Transmission_Config*))
 DYNALIB_FN(BASE_IDX + 7, hal_i2c, HAL_I2C_End_Transmission, uint8_t(HAL_I2C_Interface, uint8_t, void*))
 DYNALIB_FN(BASE_IDX + 8, hal_i2c, HAL_I2C_Write_Data, uint32_t(HAL_I2C_Interface, uint8_t, void*))
 DYNALIB_FN(BASE_IDX + 9, hal_i2c, HAL_I2C_Available_Data, int32_t(HAL_I2C_Interface, void*))
@@ -79,10 +81,11 @@ DYNALIB_FN(BASE_IDX + 12, hal_i2c, HAL_I2C_Flush_Data, void(HAL_I2C_Interface, v
 DYNALIB_FN(BASE_IDX + 13, hal_i2c, HAL_I2C_Is_Enabled, bool(HAL_I2C_Interface, void*))
 DYNALIB_FN(BASE_IDX + 14, hal_i2c, HAL_I2C_Set_Callback_On_Receive, void(HAL_I2C_Interface, void(*)(int), void*))
 DYNALIB_FN(BASE_IDX + 15, hal_i2c, HAL_I2C_Set_Callback_On_Request, void(HAL_I2C_Interface, void(*)(void), void*))
-DYNALIB_FN(BASE_IDX + 16, hal_i2c, HAL_I2C_Init, void(HAL_I2C_Interface, void*))
+DYNALIB_FN(BASE_IDX + 16, hal_i2c, HAL_I2C_Init, int(HAL_I2C_Interface, const HAL_I2C_Config*))
 DYNALIB_FN(BASE_IDX + 17, hal_i2c, HAL_I2C_Reset, uint8_t(HAL_I2C_Interface, uint32_t, void*))
 DYNALIB_FN(BASE_IDX + 18, hal_i2c, HAL_I2C_Acquire, int32_t(HAL_I2C_Interface, void*))
 DYNALIB_FN(BASE_IDX + 19, hal_i2c, HAL_I2C_Release, int32_t(HAL_I2C_Interface, void*))
+DYNALIB_FN(BASE_IDX + 20, hal_i2c, HAL_I2C_Request_Data_Ex, int32_t(HAL_I2C_Interface, const HAL_I2C_Transmission_Config*, void*))
 
 DYNALIB_END(hal_i2c)
 

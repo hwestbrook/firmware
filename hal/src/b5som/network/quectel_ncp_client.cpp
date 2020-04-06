@@ -31,6 +31,7 @@
 #include "timer_hal.h"
 #include "delay_hal.h"
 #include "core_hal.h"
+#include "deviceid_hal.h"
 
 #include "stream_util.h"
 
@@ -38,6 +39,7 @@
 #include "spark_wiring_vector.h"
 
 #include <algorithm>
+#include <limits>
 
 #undef LOG_COMPILE_TIME_LEVEL
 #define LOG_COMPILE_TIME_LEVEL LOG_LEVEL_ALL
@@ -100,6 +102,19 @@ const auto QUECTEL_NCP_SIM_SELECT_PIN = 23;
 const unsigned REGISTRATION_CHECK_INTERVAL = 15 * 1000;
 const unsigned REGISTRATION_TIMEOUT = 5 * 60 * 1000;
 
+// Undefine hardware version
+const auto HW_VERSION_UNDEFINED = 0xFF;
+
+// Hardware version
+// V003 - 0x00 (disable hwfc)
+// V004 - 0x01 (enable hwfc)
+const auto HAL_VERSION_B5SOM_V003 = 0x00;
+
+const auto ICCID_MAX_LENGTH = 20;
+
+using LacType = decltype(CellularGlobalIdentity::location_area_code);
+using CidType = decltype(CellularGlobalIdentity::cell_id);
+
 } // namespace
 
 QuectelNcpClient::QuectelNcpClient() {}
@@ -113,7 +128,14 @@ int QuectelNcpClient::init(const NcpClientConfig& conf) {
     conf_ = static_cast<const CellularNcpClientConfig&>(conf);
 
     // Initialize serial stream
-    auto sconf = SERIAL_8N1 | SERIAL_FLOW_CONTROL_NONE; // TODO: replace with SERIAL_FLOW_CONTROL_RTS_CTS when HW is fixed.
+    auto sconf = SERIAL_8N1 | SERIAL_FLOW_CONTROL_RTS_CTS;
+
+    uint32_t hwVersion = HW_VERSION_UNDEFINED;
+    auto ret = hal_get_device_hw_version(&hwVersion, nullptr);
+    if (ret == SYSTEM_ERROR_NONE && hwVersion == HAL_VERSION_B5SOM_V003) {
+        sconf = SERIAL_8N1;
+        LOG(TRACE, "Disable Hardware Flow control!");
+    }
 
     std::unique_ptr<SerialStream> serial(new (std::nothrow) SerialStream(HAL_USART_SERIAL2, QUECTEL_NCP_DEFAULT_SERIAL_BAUDRATE, sconf));
     CHECK_TRUE(serial, SYSTEM_ERROR_NO_MEMORY);
@@ -152,54 +174,124 @@ int QuectelNcpClient::initParser(Stream* stream) {
     auto parserConf = AtParserConfig().stream(stream).commandTerminator(AtCommandTerminator::CRLF);
     parser_.destroy();
     CHECK(parser_.init(std::move(parserConf)));
-    CHECK(parser_.addUrcHandler("+CREG",
-                                [](AtResponseReader* reader, const char* prefix, void* data) -> int {
-                                    const auto self = (QuectelNcpClient*)data;
-                                    int val[2];
-                                    int r = CHECK_PARSER_URC(reader->scanf("+CREG: %d,%d", &val[0], &val[1]));
-                                    CHECK_TRUE(r >= 1, SYSTEM_ERROR_UNKNOWN);
-                                    // Home network or roaming
-                                    if (val[r - 1] == 1 || val[r - 1] == 5) {
-                                        self->creg_ = RegistrationState::Registered;
-                                    } else {
-                                        self->creg_ = RegistrationState::NotRegistered;
-                                    }
-                                    self->checkRegistrationState();
-                                    return SYSTEM_ERROR_NONE;
-                                },
-                                this));
-    CHECK(parser_.addUrcHandler("+CGREG",
-                                [](AtResponseReader* reader, const char* prefix, void* data) -> int {
-                                    const auto self = (QuectelNcpClient*)data;
-                                    int val[2];
-                                    int r = CHECK_PARSER_URC(reader->scanf("+CGREG: %d,%d", &val[0], &val[1]));
-                                    CHECK_TRUE(r >= 1, SYSTEM_ERROR_UNKNOWN);
-                                    // Home network or roaming
-                                    if (val[r - 1] == 1 || val[r - 1] == 5) {
-                                        self->cgreg_ = RegistrationState::Registered;
-                                    } else {
-                                        self->cgreg_ = RegistrationState::NotRegistered;
-                                    }
-                                    self->checkRegistrationState();
-                                    return SYSTEM_ERROR_NONE;
-                                },
-                                this));
-    CHECK(parser_.addUrcHandler("+CEREG",
-                                [](AtResponseReader* reader, const char* prefix, void* data) -> int {
-                                    const auto self = (QuectelNcpClient*)data;
-                                    int val[2];
-                                    int r = CHECK_PARSER_URC(reader->scanf("+CEREG: %d,%d", &val[0], &val[1]));
-                                    CHECK_TRUE(r >= 1, SYSTEM_ERROR_UNKNOWN);
-                                    // Home network or roaming
-                                    if (val[r - 1] == 1 || val[r - 1] == 5) {
-                                        self->cereg_ = RegistrationState::Registered;
-                                    } else {
-                                        self->cereg_ = RegistrationState::NotRegistered;
-                                    }
-                                    self->checkRegistrationState();
-                                    return SYSTEM_ERROR_NONE;
-                                },
-                                this));
+
+    // NOTE: These URC handlers need to take care of both the URCs and direct responses to the commands.
+    // See CH28408
+
+    //+CREG: <n>,<stat>[,<lac>,<ci>[,<Act>]]
+    //+CREG: <stat>[,<lac>,<ci>[,<Act>]]
+    CHECK(parser_.addUrcHandler("+CREG", [](AtResponseReader* reader, const char* prefix, void* data) -> int {
+        const auto self = (QuectelNcpClient*)data;
+        unsigned int val[4] = {};
+        char atResponse[64] = {};
+        // Take a copy of AT response for multi-pass scanning
+        CHECK_PARSER_URC(reader->readLine(atResponse, sizeof(atResponse)));
+        // Parse response ignoring mode (replicate URC response)
+        int r = ::sscanf(atResponse, "+CREG: %*u,%u,\"%x\",\"%x\",%u", &val[0], &val[1], &val[2], &val[3]);
+        // Reparse URC as direct response
+        if (0 >= r) {
+            r = CHECK_PARSER_URC(
+                ::sscanf(atResponse, "+CREG: %u,\"%x\",\"%x\",%u", &val[0], &val[1], &val[2], &val[3]));
+        }
+        CHECK_TRUE(r >= 1, SYSTEM_ERROR_AT_RESPONSE_UNEXPECTED);
+        // Home network or roaming
+        if (val[0] == 1 || val[0] == 5) {
+            self->creg_ = RegistrationState::Registered;
+        } else {
+            self->creg_ = RegistrationState::NotRegistered;
+        }
+        self->checkRegistrationState();
+        // Cellular Global Identity (partial)
+        // Only update if unset
+        if (r >= 3) {
+            if (self->cgi_.location_area_code == std::numeric_limits<LacType>::max() &&
+                    self->cgi_.cell_id == std::numeric_limits<CidType>::max()) {
+                self->cgi_.location_area_code = static_cast<LacType>(val[1]);
+                self->cgi_.cell_id = static_cast<CidType>(val[2]);
+            }
+        }
+        return SYSTEM_ERROR_NONE;
+    }, this));
+    //+CGREG: <n>,<stat>[,<lac>,<ci>[,<Act>]]
+    //+CGREG: <stat>[,<lac>,<ci>[,<Act>]]
+    CHECK(parser_.addUrcHandler("+CGREG", [](AtResponseReader* reader, const char* prefix, void* data) -> int {
+        const auto self = (QuectelNcpClient*)data;
+        unsigned int val[4] = {};
+        char atResponse[64] = {};
+        // Take a copy of AT response for multi-pass scanning
+        CHECK_PARSER_URC(reader->readLine(atResponse, sizeof(atResponse)));
+        // Parse response ignoring mode (replicate URC response)
+        int r = ::sscanf(atResponse, "+CGREG: %*u,%u,\"%x\",\"%x\",%u", &val[0], &val[1], &val[2], &val[3]);
+        // Reparse URC as direct response
+        if (0 >= r) {
+            r = CHECK_PARSER_URC(
+                ::sscanf(atResponse, "+CGREG: %u,\"%x\",\"%x\",%u", &val[0], &val[1], &val[2], &val[3]));
+        }
+        CHECK_TRUE(r >= 1, SYSTEM_ERROR_AT_RESPONSE_UNEXPECTED);
+        // Home network or roaming
+        if (val[0] == 1 || val[0] == 5) {
+            self->cgreg_ = RegistrationState::Registered;
+        } else {
+            self->cgreg_ = RegistrationState::NotRegistered;
+        }
+        self->checkRegistrationState();
+        // Cellular Global Identity (partial)
+        if (r >= 3) {
+            auto rat = r >= 4 ? static_cast<CellularAccessTechnology>(val[3]) : self->act_;
+            switch (rat) {
+                case CellularAccessTechnology::GSM:
+                case CellularAccessTechnology::GSM_COMPACT:
+                case CellularAccessTechnology::UTRAN:
+                case CellularAccessTechnology::GSM_EDGE:
+                case CellularAccessTechnology::UTRAN_HSDPA:
+                case CellularAccessTechnology::UTRAN_HSUPA:
+                case CellularAccessTechnology::UTRAN_HSDPA_HSUPA: {
+                    self->cgi_.location_area_code = static_cast<LacType>(val[1]);
+                    self->cgi_.cell_id = static_cast<CidType>(val[2]);
+                    break;
+                }
+            }
+        }
+        return SYSTEM_ERROR_NONE;
+    }, this));
+    //+CEREG: <n>,<stat>[,<tac>,<ci>[,<Act>]]
+    //+CEREG: <stat>[,<tac>,<ci>[,<Act>]]
+    CHECK(parser_.addUrcHandler("+CEREG", [](AtResponseReader* reader, const char* prefix, void* data) -> int {
+        const auto self = (QuectelNcpClient*)data;
+        unsigned int val[4] = {};
+        char atResponse[64] = {};
+        // Take a copy of AT response for multi-pass scanning
+        CHECK_PARSER_URC(reader->readLine(atResponse, sizeof(atResponse)));
+        // Parse response ignoring mode (replicate URC response)
+        int r = ::sscanf(atResponse, "+CEREG: %*u,%u,\"%x\",\"%x\",%u", &val[0], &val[1], &val[2], &val[3]);
+        // Reparse URC as direct response
+        if (0 >= r) {
+            r = CHECK_PARSER_URC(
+                ::sscanf(atResponse, "+CEREG: %u,\"%x\",\"%x\",%u", &val[0], &val[1], &val[2], &val[3]));
+        }
+        CHECK_TRUE(r >= 1, SYSTEM_ERROR_AT_RESPONSE_UNEXPECTED);
+        // Home network or roaming
+        if (val[0] == 1 || val[0] == 5) {
+            self->cereg_ = RegistrationState::Registered;
+        } else {
+            self->cereg_ = RegistrationState::NotRegistered;
+        }
+        self->checkRegistrationState();
+        // Cellular Global Identity (partial)
+        if (r >= 3) {
+            auto rat = r >= 4 ? static_cast<CellularAccessTechnology>(val[3]) : self->act_;
+            switch (rat) {
+                case CellularAccessTechnology::LTE:
+                case CellularAccessTechnology::EC_GSM_IOT:
+                case CellularAccessTechnology::E_UTRAN: {
+                    self->cgi_.location_area_code = static_cast<LacType>(val[1]);
+                    self->cgi_.cell_id = static_cast<CidType>(val[2]);
+                    break;
+                }
+            }
+        }
+        return SYSTEM_ERROR_NONE;
+    }, this));
     return SYSTEM_ERROR_NONE;
 }
 
@@ -301,7 +393,15 @@ int QuectelNcpClient::updateFirmware(InputStream* file, size_t size) {
 }
 
 int QuectelNcpClient::dataChannelWrite(int id, const uint8_t* data, size_t size) {
-    return muxer_.writeChannel(QUECTEL_NCP_PPP_CHANNEL, data, size);
+    int err = muxer_.writeChannel(QUECTEL_NCP_PPP_CHANNEL, data, size);
+
+    if (err) {
+        // Make sure we are going into an error state if muxer for some reason fails
+        // to write into the data channel.
+        disable();
+    }
+
+    return err;
 }
 
 void QuectelNcpClient::processEvents() {
@@ -337,7 +437,13 @@ int QuectelNcpClient::getIccid(char* buf, size_t size) {
     CHECK_TRUE(r == 1, SYSTEM_ERROR_UNKNOWN);
     r = CHECK_PARSER(resp.readResult());
     CHECK_TRUE(r == AtResponse::OK, SYSTEM_ERROR_UNKNOWN);
-    size_t n = std::min(strlen(iccid), size);
+    auto iccidLen = strlen(iccid);
+    // Strip padding F, as for certain SIMs Quectel's AT+CCID does not strip it on its own
+    if (iccidLen == ICCID_MAX_LENGTH && (iccid[iccidLen - 1] == 'F' || iccid[iccidLen - 1] == 'f')) {
+        iccid[iccidLen - 1] = '\0';
+        --iccidLen;
+    }
+    size_t n = std::min(iccidLen, size);
     memcpy(buf, iccid, n);
     if (size > 0) {
         if (n == size) {
@@ -374,6 +480,15 @@ int QuectelNcpClient::queryAndParseAtCops(CellularSignalQuality* qual) {
     r = CHECK_PARSER(resp.readResult());
     CHECK_TRUE(r == AtResponse::OK, SYSTEM_ERROR_AT_NOT_OK);
 
+    // Preserve digit format data
+    const int mnc_digits = ::strnlen(mobileNetworkCode, sizeof(mobileNetworkCode));
+    CHECK_TRUE((2 == mnc_digits || 3 == mnc_digits), SYSTEM_ERROR_BAD_DATA);
+    if (2 == mnc_digits) {
+        cgi_.cgi_flags |= CGI_FLAG_TWO_DIGIT_MNC;
+    } else {
+        cgi_.cgi_flags &= ~CGI_FLAG_TWO_DIGIT_MNC;
+    }
+
     // `atoi` returns zero on error, which is an invalid `mcc` and `mnc`
     cgi_.mobile_country_code = static_cast<uint16_t>(::atoi(mobileCountryCode));
     cgi_.mobile_network_code = static_cast<uint16_t>(::atoi(mobileNetworkCode));
@@ -408,9 +523,36 @@ int QuectelNcpClient::getCellularGlobalIdentity(CellularGlobalIdentity* cgi) {
     CHECK_TRUE(connState_ != NcpConnectionState::DISCONNECTED, SYSTEM_ERROR_INVALID_STATE);
     CHECK_TRUE(cgi, SYSTEM_ERROR_INVALID_ARGUMENT);
     CHECK(checkParser());
-    CHECK(queryAndParseAtCops(nullptr));
 
-    *cgi = cgi_;
+    // FIXME: this is a workaround for CH28408
+    CellularSignalQuality qual;
+    CHECK(queryAndParseAtCops(&qual));
+    CHECK_TRUE(qual.accessTechnology() != CellularAccessTechnology::NONE, SYSTEM_ERROR_INVALID_STATE);
+    // Update current RAT
+    act_ = qual.accessTechnology();
+    // Invalidate LAC and Cell ID
+    cgi_.location_area_code = std::numeric_limits<LacType>::max();
+    cgi_.cell_id = std::numeric_limits<CidType>::max();
+    // Fill in LAC and Cell ID based on current RAT, prefer PSD and EPS
+    // fallback to CSD
+    CHECK_PARSER_OK(parser_.execCommand("AT+CEREG?"));
+    CHECK_PARSER_OK(parser_.execCommand("AT+CGREG?"));
+    CHECK_PARSER_OK(parser_.execCommand("AT+CREG?"));
+
+    switch (cgi->version)
+    {
+    case CGI_VERSION_1:
+    default:
+    {
+        // Confirm user is expecting the correct amount of data
+        CHECK_TRUE((cgi->size >= sizeof(cgi_)), SYSTEM_ERROR_INVALID_ARGUMENT);
+
+        *cgi = cgi_;
+        cgi->size = sizeof(cgi_);
+        cgi->version = CGI_VERSION_1;
+        break;
+    }
+    }
 
     return SYSTEM_ERROR_NONE;
 }
@@ -420,40 +562,126 @@ int QuectelNcpClient::getSignalQuality(CellularSignalQuality* qual) {
     CHECK_TRUE(connState_ != NcpConnectionState::DISCONNECTED, SYSTEM_ERROR_INVALID_STATE);
     CHECK_TRUE(qual, SYSTEM_ERROR_INVALID_ARGUMENT);
     CHECK(checkParser());
+    CHECK(queryAndParseAtCops(qual));
 
-    {
-        int act;
-        int v;
-        auto resp = parser_.sendCommand("AT+COPS?");
-        int r = CHECK_PARSER(resp.scanf("+COPS: %d,%*d,\"%*[^\"]\",%d", &v, &act));
-        CHECK_TRUE(r == 2, SYSTEM_ERROR_UNKNOWN);
-        r = CHECK_PARSER(resp.readResult());
-        CHECK_TRUE(r == AtResponse::OK, SYSTEM_ERROR_UNKNOWN);
+    // Using AT+QCSQ first
+    struct RatMap {
+        const char* name;
+        CellularAccessTechnology rat;
+    };
 
-        switch (static_cast<CellularAccessTechnology>(act)) {
-            case CellularAccessTechnology::NONE:
-            case CellularAccessTechnology::GSM:
-            case CellularAccessTechnology::GSM_COMPACT:
-            case CellularAccessTechnology::UTRAN:
-            case CellularAccessTechnology::GSM_EDGE:
-            case CellularAccessTechnology::UTRAN_HSDPA:
-            case CellularAccessTechnology::UTRAN_HSUPA:
-            case CellularAccessTechnology::UTRAN_HSDPA_HSUPA:
-            case CellularAccessTechnology::LTE:
-            case CellularAccessTechnology::EC_GSM_IOT:
-            case CellularAccessTechnology::E_UTRAN: {
-                break;
+    static const RatMap ratMap[] = {
+        {"NOSERVICE", CellularAccessTechnology::NONE},
+        {"WCDMA", CellularAccessTechnology::UTRAN},
+        {"TDSCDMA", CellularAccessTechnology::UTRAN},
+        {"LTE", CellularAccessTechnology::LTE},
+        {"CAT-M1", CellularAccessTechnology::EC_GSM_IOT},
+        {"CAT-NB1", CellularAccessTechnology::E_UTRAN}
+    };
+
+    int vals[5] = {};
+    char sysmode[32] = {};
+
+    auto resp = parser_.sendCommand("AT+QCSQ");
+    int r = CHECK_PARSER(resp.scanf("+QCSQ: \"%31[^\"]\",%d,%d,%d,%d,%d", sysmode, &vals[0], &vals[1], &vals[2], &vals[3], &vals[4]));
+    CHECK_TRUE(r >= 2, SYSTEM_ERROR_BAD_DATA);
+    int qcsqVals = r;
+    r = CHECK_PARSER(resp.readResult());
+    CHECK_TRUE(r == AtResponse::OK, SYSTEM_ERROR_UNKNOWN);
+
+    bool qcsqOk = false;
+    for (const auto& v: ratMap) {
+        if (!strcmp(sysmode, v.name)) {
+            switch (v.rat) {
+                case CellularAccessTechnology::NONE: {
+                    qcsqOk = true;
+                    break;
+                }
+                case CellularAccessTechnology::UTRAN:
+                case CellularAccessTechnology::UTRAN_HSDPA:
+                case CellularAccessTechnology::UTRAN_HSUPA:
+                case CellularAccessTechnology::UTRAN_HSDPA_HSUPA: {
+                    if (qcsqVals >= 4) {
+                        auto rscp = vals[1];
+                        auto ecno = vals[2];
+                        if (rscp < -120) {
+                            rscp = 0;
+                        } else if (rscp >= -25) {
+                            rscp = 96;
+                        } else if (rscp >= -120 && rscp < -25) {
+                            rscp = rscp + 121;
+                        } else {
+                            rscp = 255;
+                        }
+
+                        if (ecno < -24) {
+                            ecno = 0;
+                        } else if (ecno >= 0) {
+                            ecno = 49;
+                        } else if (ecno >= -24 && ecno < 0) {
+                            ecno = (ecno * 100 + 2450) / 50;
+                        } else {
+                            ecno = 255;
+                        }
+
+                        qual->accessTechnology(v.rat);
+                        qual->strength(rscp);
+                        qual->quality(ecno);
+                        qcsqOk = true;
+                    }
+                    break;
+                }
+                case CellularAccessTechnology::LTE:
+                case CellularAccessTechnology::EC_GSM_IOT:
+                case CellularAccessTechnology::E_UTRAN: {
+                    if (qcsqVals >= 5) {
+                        const int min_rsrq_mul_by_100 = -1950;
+                        const int max_rsrq_mul_by_100 = -300;
+
+                        auto rsrp = vals[1];
+                        auto rsrq_mul_100 = vals[3] * 100;
+
+                        qual->accessTechnology(v.rat);
+
+                        if (rsrp < -140 && rsrp >= -200) {
+                            qual->strength(0);
+                        } else if (rsrp >= -44 && rsrp <= 0) {
+                            qual->strength(97);
+                        } else if (rsrp >= -140 && rsrp < -44) {
+                            qual->strength(rsrp + 141);
+                        } else {
+                            // If RSRP is not in the expected range
+                            qual->strength(255);
+                        }
+
+                        if (rsrq_mul_100 < min_rsrq_mul_by_100 && rsrq_mul_100 >= -2000) {
+                            qual->quality(0);
+                        } else if (rsrq_mul_100 >= max_rsrq_mul_by_100 && rsrq_mul_100 <=0) {
+                            qual->quality(34);
+                        } else if (rsrq_mul_100 >= min_rsrq_mul_by_100 && rsrq_mul_100 < max_rsrq_mul_by_100) {
+                            qual->quality((rsrq_mul_100 + 2000) / 50);
+                        } else {
+                            // If RSRQ is not in the expected range
+                            qual->quality(255);
+                        }
+                        qcsqOk = true;
+                    }
+                    break;
+                }
             }
-            default: {
-                return SYSTEM_ERROR_BAD_DATA;
-            }
+
+            break;
         }
-        qual->accessTechnology(static_cast<CellularAccessTechnology>(act));
     }
 
+    if (qcsqOk) {
+        return SYSTEM_ERROR_NONE;
+    }
+
+    // Fall-back to AT+CSQ on errors or 2G as AT+QCSQ does not provide quality for GSM
     int rxlev, rxqual;
-    auto resp = parser_.sendCommand("AT+CSQ");
-    int r = CHECK_PARSER(resp.scanf("+CSQ: %d,%d", &rxlev, &rxqual));
+    resp = parser_.sendCommand("AT+CSQ");
+    r = CHECK_PARSER(resp.scanf("+CSQ: %d,%d", &rxlev, &rxqual));
     CHECK_TRUE(r == 2, SYSTEM_ERROR_BAD_DATA);
     r = CHECK_PARSER(resp.readResult());
     CHECK_TRUE(r == AtResponse::OK, SYSTEM_ERROR_UNKNOWN);
@@ -632,21 +860,31 @@ int QuectelNcpClient::initReady() {
     }
 
     // Select (U)SIM card in slot 1, EG91 has two SIM card slots
-    if (ncpId() == PLATFORM_NCP_QUECTEL_EG91_E || ncpId() == PLATFORM_NCP_QUECTEL_EG91_NA) {
+    if (ncpId() == PLATFORM_NCP_QUECTEL_EG91_E || \
+        ncpId() == PLATFORM_NCP_QUECTEL_EG91_NA || \
+        ncpId() == PLATFORM_NCP_QUECTEL_EG91_EX) {
         CHECK_PARSER(parser_.execCommand("AT+QDSIM=0"));
     }
 
     // Enable flow control and change to runtime baudrate
-    // TODO: Uncomment when hardware is rev'd to fix CTS/RTS swap.
-    // CHECK_PARSER(parser_.execCommand("AT+IFC=2,2"));
-    CHECK(changeBaudRate(QUECTEL_NCP_RUNTIME_SERIAL_BAUDRATE));
+    auto runtimeBaudrate = QUECTEL_NCP_DEFAULT_SERIAL_BAUDRATE;
+    uint32_t hwVersion = HW_VERSION_UNDEFINED;
+    auto ret = hal_get_device_hw_version(&hwVersion, nullptr);
+    if (ret == SYSTEM_ERROR_NONE && hwVersion == HAL_VERSION_B5SOM_V003) {
+        CHECK_PARSER(parser_.execCommand("AT+IFC=0,0"));
+    } else {
+        runtimeBaudrate = QUECTEL_NCP_RUNTIME_SERIAL_BAUDRATE;
+        CHECK_PARSER(parser_.execCommand("AT+IFC=2,2"));
+    }
+    CHECK(changeBaudRate(runtimeBaudrate));
+
     // Check that the modem is responsive at the new baudrate
     skipAll(serial_.get(), 1000);
     CHECK(waitAtResponse(10000));
 
     // Send AT+CMUX and initialize multiplexer
     int portspeed;
-    switch (QUECTEL_NCP_RUNTIME_SERIAL_BAUDRATE) {
+    switch (runtimeBaudrate) {
         case 9600: portspeed = 1; break;
         case 19200: portspeed = 2; break;
         case 38400: portspeed = 3; break;
@@ -694,6 +932,10 @@ int QuectelNcpClient::initReady() {
     LOG_DEBUG(TRACE, "Muxer AT channel live");
 
     muxerSg.dismiss();
+
+    // Make sure that we receive URCs only on AT channel, ignore response code
+    // just in case
+    CHECK_PARSER(parser_.execCommand("AT+QCFG=\"cmux/urcport\",1"));
 
     return SYSTEM_ERROR_NONE;
 }
@@ -840,22 +1082,27 @@ int QuectelNcpClient::muxChannelStateCb(uint8_t channel, decltype(muxer_)::Chann
     // This callback is executed from the multiplexer thread, not safe to use the lock here
     // because it might get called while blocked inside some muxer function
 
+    // Also please note that connectionState() should never be called with the CONNECTED state
+    // from this callback.
+
     // We are only interested in Closed state
     if (newState == decltype(muxer_)::ChannelState::Closed) {
         switch (channel) {
-        case 0: {
-            // Muxer stopped
-            self->disable();
-            self->connState_ = NcpConnectionState::DISCONNECTED;
-            break;
-        }
-        case QUECTEL_NCP_PPP_CHANNEL: {
-            // PPP channel closed
-            if (self->connState_ != NcpConnectionState::DISCONNECTED) {
-                self->connState_ = NcpConnectionState::CONNECTING;
+            case 0: {
+                // Muxer stopped
+                self->disable();
+                break;
             }
-            break;
-        }
+            case QUECTEL_NCP_PPP_CHANNEL: {
+                // PPP channel closed
+                if (self->connState_ != NcpConnectionState::DISCONNECTED) {
+                    // It should be safe to notify the PPP netif/client about a change of state
+                    // here exactly because the muxer channel is closed and there is no
+                    // chance for a deadlock.
+                    self->connectionState(NcpConnectionState::CONNECTING);
+                }
+                break;
+            }
         }
     }
 

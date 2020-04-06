@@ -153,7 +153,7 @@ private:
    *
    * Enables Gen2 platforms to synchronize access to the SPI peripheral
    */
-  Mutex _mutex;
+  RecursiveMutex _mutex;
 #endif
 
 public:
@@ -162,7 +162,7 @@ public:
 
   void begin();
   void begin(uint16_t);
-  void begin(SPI_Mode mode, uint16_t);
+  void begin(SPI_Mode mode, uint16_t ss_pin = SPI_DEFAULT_SS);
   void end();
 
   void setBitOrder(uint8_t);
@@ -262,25 +262,33 @@ public:
 
 #ifndef SPARK_WIRING_NO_SPI
 
-extern SPIClass SPI;
+namespace particle {
+namespace globals {
+
+SPIClass& instanceSpi();
+#define SPI ::particle::globals::instanceSpi()
 
 #if Wiring_SPI1
 #ifdef SPI1
 #undef SPI1
 #endif  // SPI1
 
-extern SPIClass SPI1;
+SPIClass& instanceSpi1();
+#define SPI1 ::particle::globals::instanceSpi1()
 
-#endif  // Wiring_SPI1
+#endif // Wiring_SPI1
 
 #if Wiring_SPI2
 #ifdef SPI2
 #undef SPI2
 #endif  // SPI2
 
-extern SPIClass SPI2;
+SPIClass& instanceSpi2();
+#define SPI2 ::particle::globals::instanceSpi2()
 
-#endif  // Wiring_SPI2
+#endif // Wiring_SPI2
+
+} } // particle::globals
 
 #endif  // SPARK_WIRING_NO_SPI
 
