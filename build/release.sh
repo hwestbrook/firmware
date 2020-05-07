@@ -1,7 +1,7 @@
 #!/bin/bash
 set -o errexit -o pipefail -o noclobber -o nounset
 
-VERSION="1.5.0"
+VERSION="1.5.1"
 
 function display_help ()
 {
@@ -365,7 +365,11 @@ elif [ $PLATFORM_ID -eq 10 ]; then
     # Configure
     cd ../modules
     MODULAR="y"
-    declare -a debugBuildOptions=("y" "n")
+    if [ $DEBUG = true ]; then
+        declare -a debugBuildOptions=("y" "n")
+    else
+        declare -a debugBuildOptions=("n")
+    fi
 
     for debugBuildOption in ${debugBuildOptions[@]}; do
         DEBUG_BUILD=$debugBuildOption

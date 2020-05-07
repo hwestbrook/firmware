@@ -100,7 +100,7 @@ const auto QUECTEL_NCP_PPP_CHANNEL = 2;
 const auto QUECTEL_NCP_SIM_SELECT_PIN = 23;
 
 const unsigned REGISTRATION_CHECK_INTERVAL = 15 * 1000;
-const unsigned REGISTRATION_TIMEOUT = 5 * 60 * 1000;
+const unsigned REGISTRATION_TIMEOUT = 10 * 60 * 1000;
 
 // Undefine hardware version
 const auto HW_VERSION_UNDEFINED = 0xFF;
@@ -282,8 +282,8 @@ int QuectelNcpClient::initParser(Stream* stream) {
             auto rat = r >= 4 ? static_cast<CellularAccessTechnology>(val[3]) : self->act_;
             switch (rat) {
                 case CellularAccessTechnology::LTE:
-                case CellularAccessTechnology::EC_GSM_IOT:
-                case CellularAccessTechnology::E_UTRAN: {
+                case CellularAccessTechnology::LTE_CAT_M1:
+                case CellularAccessTechnology::LTE_NB_IOT: {
                     self->cgi_.location_area_code = static_cast<LacType>(val[1]);
                     self->cgi_.cell_id = static_cast<CidType>(val[2]);
                     break;
@@ -503,8 +503,8 @@ int QuectelNcpClient::queryAndParseAtCops(CellularSignalQuality* qual) {
         case CellularAccessTechnology::UTRAN_HSUPA:
         case CellularAccessTechnology::UTRAN_HSDPA_HSUPA:
         case CellularAccessTechnology::LTE:
-        case CellularAccessTechnology::EC_GSM_IOT:
-        case CellularAccessTechnology::E_UTRAN: {
+        case CellularAccessTechnology::LTE_CAT_M1:
+        case CellularAccessTechnology::LTE_NB_IOT: {
             break;
         }
         default: {
@@ -575,8 +575,8 @@ int QuectelNcpClient::getSignalQuality(CellularSignalQuality* qual) {
         {"WCDMA", CellularAccessTechnology::UTRAN},
         {"TDSCDMA", CellularAccessTechnology::UTRAN},
         {"LTE", CellularAccessTechnology::LTE},
-        {"CAT-M1", CellularAccessTechnology::EC_GSM_IOT},
-        {"CAT-NB1", CellularAccessTechnology::E_UTRAN}
+        {"CAT-M1", CellularAccessTechnology::LTE_CAT_M1},
+        {"CAT-NB1", CellularAccessTechnology::LTE_NB_IOT}
     };
 
     int vals[5] = {};
@@ -632,8 +632,8 @@ int QuectelNcpClient::getSignalQuality(CellularSignalQuality* qual) {
                     break;
                 }
                 case CellularAccessTechnology::LTE:
-                case CellularAccessTechnology::EC_GSM_IOT:
-                case CellularAccessTechnology::E_UTRAN: {
+                case CellularAccessTechnology::LTE_CAT_M1:
+                case CellularAccessTechnology::LTE_NB_IOT: {
                     if (qcsqVals >= 5) {
                         const int min_rsrq_mul_by_100 = -1950;
                         const int max_rsrq_mul_by_100 = -300;
@@ -645,7 +645,7 @@ int QuectelNcpClient::getSignalQuality(CellularSignalQuality* qual) {
 
                         if (rsrp < -140 && rsrp >= -200) {
                             qual->strength(0);
-                        } else if (rsrp >= -44 && rsrp <= 0) {
+                        } else if (rsrp >= -44 && rsrp < 0) {
                             qual->strength(97);
                         } else if (rsrp >= -140 && rsrp < -44) {
                             qual->strength(rsrp + 141);
@@ -656,7 +656,7 @@ int QuectelNcpClient::getSignalQuality(CellularSignalQuality* qual) {
 
                         if (rsrq_mul_100 < min_rsrq_mul_by_100 && rsrq_mul_100 >= -2000) {
                             qual->quality(0);
-                        } else if (rsrq_mul_100 >= max_rsrq_mul_by_100 && rsrq_mul_100 <=0) {
+                        } else if (rsrq_mul_100 >= max_rsrq_mul_by_100 && rsrq_mul_100 < 0) {
                             qual->quality(34);
                         } else if (rsrq_mul_100 >= min_rsrq_mul_by_100 && rsrq_mul_100 < max_rsrq_mul_by_100) {
                             qual->quality((rsrq_mul_100 + 2000) / 50);
@@ -837,6 +837,21 @@ int QuectelNcpClient::changeBaudRate(unsigned int baud) {
 }
 
 int QuectelNcpClient::initReady() {
+    // Enable flow control and change to runtime baudrate
+    auto runtimeBaudrate = QUECTEL_NCP_DEFAULT_SERIAL_BAUDRATE;
+    uint32_t hwVersion = HW_VERSION_UNDEFINED;
+    auto ret = hal_get_device_hw_version(&hwVersion, nullptr);
+    if (ret == SYSTEM_ERROR_NONE && hwVersion == HAL_VERSION_B5SOM_V003) {
+        CHECK_PARSER_OK(parser_.execCommand("AT+IFC=0,0"));
+    } else {
+        runtimeBaudrate = QUECTEL_NCP_RUNTIME_SERIAL_BAUDRATE;
+        CHECK_PARSER_OK(parser_.execCommand("AT+IFC=2,2"));
+    }
+    CHECK(changeBaudRate(runtimeBaudrate));
+    // Check that the modem is responsive at the new baudrate
+    skipAll(serial_.get(), 1000);
+    CHECK(waitAtResponse(10000));
+
     // Select either internal or external SIM card slot depending on the configuration
     CHECK(selectSimCard());
 
@@ -865,22 +880,6 @@ int QuectelNcpClient::initReady() {
         ncpId() == PLATFORM_NCP_QUECTEL_EG91_EX) {
         CHECK_PARSER(parser_.execCommand("AT+QDSIM=0"));
     }
-
-    // Enable flow control and change to runtime baudrate
-    auto runtimeBaudrate = QUECTEL_NCP_DEFAULT_SERIAL_BAUDRATE;
-    uint32_t hwVersion = HW_VERSION_UNDEFINED;
-    auto ret = hal_get_device_hw_version(&hwVersion, nullptr);
-    if (ret == SYSTEM_ERROR_NONE && hwVersion == HAL_VERSION_B5SOM_V003) {
-        CHECK_PARSER(parser_.execCommand("AT+IFC=0,0"));
-    } else {
-        runtimeBaudrate = QUECTEL_NCP_RUNTIME_SERIAL_BAUDRATE;
-        CHECK_PARSER(parser_.execCommand("AT+IFC=2,2"));
-    }
-    CHECK(changeBaudRate(runtimeBaudrate));
-
-    // Check that the modem is responsive at the new baudrate
-    skipAll(serial_.get(), 1000);
-    CHECK(waitAtResponse(10000));
 
     // Send AT+CMUX and initialize multiplexer
     int portspeed;

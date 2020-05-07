@@ -147,14 +147,17 @@ AcT toCellularAccessTechnology(int rat) {
             return ACT_UTRAN;
         case UBLOX_SARA_RAT_LTE:
             return ACT_LTE;
-        case UBLOX_SARA_RAT_EC_GSM_IOT:
+        case UBLOX_SARA_RAT_LTE_CAT_M1:
             return ACT_LTE_CAT_M1;
-        case UBLOX_SARA_RAT_E_UTRAN:
+        case UBLOX_SARA_RAT_LTE_NB_IOT:
             return ACT_LTE_CAT_NB1;
         default:
             return ACT_UNKNOWN;
     }
 }
+
+// see 3GPP TS 45.008 [20] subclause 8.2.4
+const char compatQualMap[] = { 49, 43, 37, 25, 19, 13, 7, 0 };
 
 } // anonymous
 
@@ -1248,7 +1251,7 @@ int MDMParser::_cbURAT(int type, const char *buf, int len, bool *matched_default
     return WAIT;
 }
 
-bool MDMParser::registerNet(const char* apn, NetStatus* status /*= NULL*/, system_tick_t timeout_ms /*= 180000*/)
+bool MDMParser::registerNet(const char* apn, NetStatus* status, system_tick_t timeout_ms)
 {
     LOCK();
     if (_init && _pwr && _dev.dev != DEV_UNKNOWN) {
@@ -1481,6 +1484,12 @@ bool MDMParser::getSignalStrength(NetStatus &status)
         // RSSI() API's have a RAT for conversion lookup purposes.
         if (_dev.dev == DEV_SARA_G350) {
             _net.act = ACT_GSM;
+        }
+
+        // R410M modems report AcT as LTE and LTE-M1 when connecting
+        // on LTE-M1. If AcT is reported as LTE, change it to report LTE-M1
+        if (_dev.dev == DEV_SARA_R410 && _net.act == ACT_LTE) {
+            _net.act = ACT_LTE_CAT_M1;
         }
 
         // AT command used to collect signal stregnth is different for R410M radio
@@ -1802,6 +1811,16 @@ int MDMParser::_cbUCGED(int type, const char* buf, int len, NetStatus* status)
             } else {
                 status->rsrp = 255;
             }
+
+            // Compatibility values for old API
+            if (status->rsrp != 255) {
+                // Simply remap from [0-97] to [0-63]
+                int compatStrn = (status->rsrp * 63) / 97;
+                // -113 to -50dBm
+                status->rssi = -113 + compatStrn;
+            } else {
+                status->rssi = 0;
+            }
         }
         // RSRQ maps from dBm [-20,-3] to [0,34]
         // We are defining hard boundaries for RSRP to be between [],
@@ -1817,6 +1836,18 @@ int MDMParser::_cbUCGED(int type, const char* buf, int len, NetStatus* status)
             } else {
                 status->rsrq = 255;
             }
+
+            // Compatibility values for old API
+            if (status->rsrq != 255) {
+                // Re-map from [0-34] to [0-7]. Table in UBX-13002752 - R62 (7.2.4)
+                int compatQual = (status->rsrq < 10) ? (status->rsrq / 5) : ((std::min(status->rsrq, 30) - 10) / 4) + 2;
+                // Just in case validate that we are not going to go out of bounds
+                if (compatQual >= 0 && compatQual <= 7) {
+                    status->qual = compatQualMap[compatQual];
+                }
+            } else {
+                status->qual = 0;
+            }
         }
     }
     return WAIT;
@@ -1826,11 +1857,10 @@ int MDMParser::_cbCSQ(int type, const char* buf, int len, NetStatus* status)
 {
     if ((type == TYPE_PLUS) && status){
         int a,b;
-        char _qual[] = { 49, 43, 37, 25, 19, 13, 7, 0 }; // see 3GPP TS 45.008 [20] subclause 8.2.4
         // +CSQ: <rssi>,<qual>
         if (sscanf(buf, "\r\n+CSQ: %d,%d",&a,&b) == 2) {
             if (a != 99) status->rssi = -113 + 2*a;  // 0: -113 1: -111 ... 30: -53 dBm with 2 dBm steps
-            if ((b != 99) && (b < (int)sizeof(_qual))) status->qual = _qual[b];  //
+            if ((b != 99) && (b < (int)sizeof(compatQualMap))) status->qual = compatQualMap[b];  //
 
             switch (status->act) {
             case ACT_GSM:
