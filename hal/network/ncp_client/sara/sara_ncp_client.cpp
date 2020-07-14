@@ -86,6 +86,11 @@ inline system_tick_t millis() {
 
 const auto UBLOX_NCP_DEFAULT_SERIAL_BAUDRATE = 115200;
 const auto UBLOX_NCP_RUNTIME_SERIAL_BAUDRATE_U2 = 115200;
+// Forward-compatibility with persistent 460800 baudrate in 2.0+
+const auto UBLOX_NCP_RUNTIME_SERIAL_BAUDRATE_R4 = 460800;
+const auto UBLOX_NCP_R4_APP_FW_VERSION_MEMORY_LEAK_ISSUE = 200;
+const auto UBLOX_NCP_R4_APP_FW_VERSION_NO_HW_FLOW_CONTROL_MIN = 200;
+const auto UBLOX_NCP_R4_APP_FW_VERSION_NO_HW_FLOW_CONTROL_MAX = 203;
 
 const auto UBLOX_NCP_MAX_MUXER_FRAME_SIZE = 1509;
 const auto UBLOX_NCP_KEEPALIVE_PERIOD = 5000; // milliseconds
@@ -105,6 +110,10 @@ const unsigned REGISTRATION_TIMEOUT = 10 * 60 * 1000;
 using LacType = decltype(CellularGlobalIdentity::location_area_code);
 using CidType = decltype(CellularGlobalIdentity::cell_id);
 
+const size_t UBLOX_NCP_R4_BYTES_PER_WINDOW_THRESHOLD = 512;
+const system_tick_t UBLOX_NCP_R4_WINDOW_SIZE_MS = 50;
+
+
 } // anonymous
 
 SaraNcpClient::SaraNcpClient() {
@@ -118,15 +127,8 @@ int SaraNcpClient::init(const NcpClientConfig& conf) {
     modemInit();
     conf_ = static_cast<const CellularNcpClientConfig&>(conf);
     // Initialize serial stream
-    auto sconf = SERIAL_8N1;
-    if (conf_.ncpIdentifier() != PLATFORM_NCP_SARA_R410) {
-        sconf |= SERIAL_FLOW_CONTROL_RTS_CTS;
-    } else {
-        HAL_Pin_Mode(RTS1, OUTPUT);
-        HAL_GPIO_Write(RTS1, 0);
-    }
     std::unique_ptr<SerialStream> serial(new (std::nothrow) SerialStream(HAL_USART_SERIAL2,
-            UBLOX_NCP_DEFAULT_SERIAL_BAUDRATE, sconf));
+            UBLOX_NCP_DEFAULT_SERIAL_BAUDRATE, SERIAL_8N1 | SERIAL_FLOW_CONTROL_RTS_CTS));
     CHECK_TRUE(serial, SYSTEM_ERROR_NO_MEMORY);
     // Initialize muxed channel stream
     decltype(muxerAtStream_) muxStrm(new(std::nothrow) decltype(muxerAtStream_)::element_type(&muxer_, UBLOX_NCP_AT_CHANNEL));
@@ -385,15 +387,43 @@ int SaraNcpClient::updateFirmware(InputStream* file, size_t size) {
     return SYSTEM_ERROR_NOT_SUPPORTED;
 }
 
+/*
+* This is a callback that writes data into muxer channel 2 (data PPP channel)
+* Whenever we encounter a large packet, we enforce a certain number of ms to pass before
+* transmitting anything else on this channel. After we send large packet, we drop messages(bytes)
+* for a certain amount of time defined by UBLOX_NCP_R4_WINDOW_SIZE_MS
+*/
 int SaraNcpClient::dataChannelWrite(int id, const uint8_t* data, size_t size) {
-    int err = muxer_.writeChannel(UBLOX_NCP_PPP_CHANNEL, data, size);
+    if (ncpId() == PLATFORM_NCP_SARA_R410 && fwVersion_ <= UBLOX_NCP_R4_APP_FW_VERSION_NO_HW_FLOW_CONTROL_MAX) {
+        if ((HAL_Timer_Get_Milli_Seconds() - lastWindow_) >= UBLOX_NCP_R4_WINDOW_SIZE_MS) {
+            lastWindow_ = HAL_Timer_Get_Milli_Seconds();
+            bytesInWindow_ = 0;
+        }
 
+        if (bytesInWindow_ >= UBLOX_NCP_R4_BYTES_PER_WINDOW_THRESHOLD) {
+            LOG_DEBUG(WARN, "Dropping");
+            // Not an error
+            return 0;
+        }
+    }
+
+    int err = muxer_.writeChannel(UBLOX_NCP_PPP_CHANNEL, data, size);
+    if (err == gsm0710::GSM0710_ERROR_FLOW_CONTROL) {
+        // Not an error
+        LOG_DEBUG(WARN, "Remote side flow control");
+        err = 0;
+    }
+    if (ncpId() == PLATFORM_NCP_SARA_R410 && fwVersion_ <= UBLOX_NCP_R4_APP_FW_VERSION_NO_HW_FLOW_CONTROL_MAX) {
+        bytesInWindow_ += size;
+        if (bytesInWindow_ >= UBLOX_NCP_R4_BYTES_PER_WINDOW_THRESHOLD) {
+            lastWindow_ = HAL_Timer_Get_Milli_Seconds();
+        }
+    }
     if (err) {
         // Make sure we are going into an error state if muxer for some reason fails
         // to write into the data channel.
         disable();
     }
-
     return err;
 }
 
@@ -745,6 +775,16 @@ int SaraNcpClient::waitReady() {
     parser_.reset();
     ready_ = waitAtResponse(20000) == 0;
 
+    if (!ready_ && ncpId() == PLATFORM_NCP_SARA_R410) {
+        // Forward-compatibility with persistent 460800 setting in 2.x
+        // Additionally attempt to talk @ 460800, if successfull, we'll later
+        // on revert to 115200.
+        CHECK(serial_->setBaudRate(UBLOX_NCP_RUNTIME_SERIAL_BAUDRATE_R4));
+        skipAll(serial_.get(), 1000);
+        parser_.reset();
+        ready_ = waitAtResponse(20000) == 0;
+    }
+
     if (ready_) {
         // start power on timer for memory issue power off delays, assume not registered
         powerOnTime_ = millis();
@@ -886,6 +926,24 @@ int SaraNcpClient::changeBaudRate(unsigned int baud) {
     return serial_->setBaudRate(baud);
 }
 
+int SaraNcpClient::getAppFirmwareVersion() {
+    // ATI9 (get version and app version)
+    // example output
+    // "08.90,A01.13" G350 (newer)
+    // "08.70,A00.02" G350 (older)
+    // "L0.0.00.00.05.06,A.02.00" (memory issue)
+    // "L0.0.00.00.05.07,A.02.02" (demonstrator)
+    // "L0.0.00.00.05.08,A.02.04" (maintenance)
+    auto resp = parser_.sendCommand("ATI9");
+    int major = 0;
+    int minor = 0;
+    int r = CHECK_PARSER(resp.scanf("%*[^,],%*[A.]%d.%d", &major, &minor));
+    CHECK_TRUE(r == 2, SYSTEM_ERROR_AT_RESPONSE_UNEXPECTED);
+    CHECK_PARSER_OK(resp.readResult());
+    LOG(TRACE, "App firmware: %d", major * 100 + minor);
+    return major * 100 + minor;
+}
+
 int SaraNcpClient::initReady() {
     // Select either internal or external SIM card slot depending on the configuration
     CHECK(selectSimCard());
@@ -895,34 +953,31 @@ int SaraNcpClient::initReady() {
     int r = CHECK_PARSER(parser_.execCommand("AT+COPS=3,2"));
 
     if (conf_.ncpIdentifier() != PLATFORM_NCP_SARA_R410) {
-        // Change the baudrate to 921600
         CHECK(changeBaudRate(UBLOX_NCP_RUNTIME_SERIAL_BAUDRATE_U2));
-        // Check that the modem is responsive at the new baudrate
-        skipAll(serial_.get(), 1000);
-        CHECK(waitAtResponse(10000));
-    }
-
-    if (ncpId() == PLATFORM_NCP_SARA_R410) {
-        // ATI9 (get version and app version)
-        // example output
-        // 16 "\r\n08.90,A01.13\r\n" G350 (newer)
-        // 16 "\r\n08.70,A00.02\r\n" G350 (older)
-        // 28 "\r\nL0.0.00.00.05.06,A.02.00\r\n" (memory issue)
-        // 28 "\r\nL0.0.00.00.05.07,A.02.02\r\n" (demonstrator)
-        // 28 "\r\nL0.0.00.00.05.08,A.02.04\r\n" (maintenance)
-        auto resp = parser_.sendCommand("ATI9");
-        char verExtended[33] = {};
-        memoryIssuePresent_ = false;
-        int r = CHECK_PARSER(resp.scanf("%32[^\n]", verExtended));
-        CHECK_TRUE(r == 1, SYSTEM_ERROR_AT_RESPONSE_UNEXPECTED);
-        r = CHECK_PARSER(resp.readResult());
-        CHECK_TRUE(r == AtResponse::OK, SYSTEM_ERROR_AT_NOT_OK);
-        if (!strcmp(verExtended, "L0.0.00.00.05.06,A.02.00")) {
-            memoryIssuePresent_ = true;
+    } else {
+        fwVersion_ = getAppFirmwareVersion();
+        if (fwVersion_ > 0) {
+            // L0.0.00.00.05.06,A.02.00 has a memory issue
+            memoryIssuePresent_ = (fwVersion_ == UBLOX_NCP_R4_APP_FW_VERSION_MEMORY_LEAK_ISSUE);
         }
 
+        // Revert to 115200 on SARA R4-based devices, as AT+IPR setting
+        // is persistent and DeviceOS <1.5.2 only supports 115200.
+        CHECK(changeBaudRate(UBLOX_NCP_DEFAULT_SERIAL_BAUDRATE));
+    }
+
+    // Check that the modem is responsive at the new baudrate
+    skipAll(serial_.get(), 1000);
+    CHECK(waitAtResponse(10000));
+
+    // Make sure flow control is enabled as well
+    // NOTE: this should work fine on SARA R4 firmware revisions that don't support it as well
+    CHECK_PARSER_OK(parser_.execCommand("AT+IFC=2,2"));
+    CHECK(waitAtResponse(10000));
+
+    if (ncpId() == PLATFORM_NCP_SARA_R410) {
         // Set UMNOPROF = SIM_SELECT
-        resp = parser_.sendCommand("AT+UMNOPROF?");
+        auto resp = parser_.sendCommand("AT+UMNOPROF?");
         bool reset = false;
         int umnoprof = static_cast<int>(UbloxSaraUmnoprof::NONE);
         r = CHECK_PARSER(resp.scanf("+UMNOPROF: %d", &umnoprof));
@@ -999,7 +1054,7 @@ int SaraNcpClient::initReady() {
     }
 
     // Send AT+CMUX and initialize multiplexer
-    r = CHECK_PARSER(parser_.execCommand("AT+CMUX=0,0,,1509,,,,,"));
+    r = CHECK_PARSER(parser_.execCommand("AT+CMUX=0,0,,%u,,,,,", UBLOX_NCP_MAX_MUXER_FRAME_SIZE));
     CHECK_TRUE(r == AtResponse::OK, SYSTEM_ERROR_AT_NOT_OK);
 
     // Initialize muxer

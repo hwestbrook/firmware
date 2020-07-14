@@ -93,8 +93,12 @@ private:
     system_tick_t regCheckTime_;
     system_tick_t registeredTime_;
     system_tick_t powerOnTime_;
+    unsigned int fwVersion_ = 0;
     bool memoryIssuePresent_ = false;
     unsigned registrationTimeout_;
+
+    system_tick_t lastWindow_ = 0;
+    size_t bytesInWindow_ = 0;
 
     int queryAndParseAtCops(CellularSignalQuality* qual);
     int initParser(Stream* stream);
@@ -123,6 +127,7 @@ private:
     bool modemPowerState() const;
     int modemSetUartState(bool state) const;
     void waitForPowerOff();
+    int getAppFirmwareVersion();
 };
 
 inline AtParser* SaraNcpClient::atParser() {
